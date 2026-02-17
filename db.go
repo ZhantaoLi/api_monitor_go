@@ -14,7 +14,7 @@ import (
 
 // Database wraps SQLite operations with a write mutex.
 type Database struct {
-	path string
+	conn *sql.DB
 	mu   sync.Mutex
 }
 
@@ -24,15 +24,7 @@ func NewDatabase(path string) (*Database, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
-	db := &Database{path: path}
-	if err := db.InitDB(); err != nil {
-		return nil, err
-	}
-	return db, nil
-}
-
-func (d *Database) open() (*sql.DB, error) {
-	conn, err := sql.Open("sqlite", d.path)
+	conn, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
@@ -45,18 +37,19 @@ func (d *Database) open() (*sql.DB, error) {
 		conn.Close()
 		return nil, err
 	}
-	return conn, nil
+	db := &Database{conn: conn}
+	if err := db.InitDB(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return db, nil
 }
 
 // InitDB creates tables and indices if they don't exist.
 func (d *Database) InitDB() error {
-	conn, err := d.open()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
+	conn := d.conn
 
-	_, err = conn.Exec(`
+	_, err := conn.Exec(`
 		CREATE TABLE IF NOT EXISTS targets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
@@ -133,11 +126,11 @@ func (d *Database) InitDB() error {
 		return fmt.Errorf("init schema: %w", err)
 	}
 
-	return d.migrateDB(conn)
+	return d.migrateDB()
 }
 
-func (d *Database) migrateDB(conn *sql.DB) error {
-	rows, err := conn.Query("PRAGMA table_info(targets)")
+func (d *Database) migrateDB() error {
+	rows, err := d.conn.Query("PRAGMA table_info(targets)")
 	if err != nil {
 		return err
 	}
@@ -158,7 +151,7 @@ func (d *Database) migrateDB(conn *sql.DB) error {
 		}
 	}
 	if !hasSourceURL {
-		_, _ = conn.Exec("ALTER TABLE targets ADD COLUMN source_url TEXT")
+		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN source_url TEXT")
 	}
 	return nil
 }
@@ -303,11 +296,7 @@ func scanModelRow(r interface{ Scan(dest ...any) error }) (*ModelRow, error) {
 
 // ListTargets returns all targets ordered by id.
 func (d *Database) ListTargets() ([]Target, error) {
-	conn, err := d.open()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	conn := d.conn
 
 	rows, err := conn.Query("SELECT * FROM targets ORDER BY id ASC")
 	if err != nil {
@@ -331,11 +320,7 @@ func (d *Database) ListTargets() ([]Target, error) {
 
 // GetTarget returns a single target by id, or nil if not found.
 func (d *Database) GetTarget(targetID int) (*Target, error) {
-	conn, err := d.open()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	conn := d.conn
 
 	row := conn.QueryRow("SELECT * FROM targets WHERE id = ?", targetID)
 	t, err := scanTarget(row)
@@ -362,12 +347,7 @@ func (d *Database) CreateTarget(payload map[string]any) (*Target, error) {
 	sourceURL := nullStringFromAny(payload["source_url"])
 
 	d.mu.Lock()
-	conn, err := d.open()
-	if err != nil {
-		d.mu.Unlock()
-		return nil, err
-	}
-	res, err := conn.Exec(`
+	res, err := d.conn.Exec(`
 		INSERT INTO targets (
 			name, base_url, api_key, enabled, interval_min, timeout_s, verify_ssl,
 			prompt, anthropic_version, max_models, source_url, created_at, updated_at
@@ -375,7 +355,6 @@ func (d *Database) CreateTarget(payload map[string]any) (*Target, error) {
 		name, baseURL, apiKey, boolToInt(enabled), intervalMin, timeoutS, boolToInt(verifySSL),
 		prompt, anthropicVersion, maxModels, sourceURL, now, now,
 	)
-	conn.Close()
 	d.mu.Unlock()
 
 	if err != nil {
@@ -427,13 +406,7 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 	query := "UPDATE targets SET " + joinStrings(setClauses, ", ") + " WHERE id = ?"
 
 	d.mu.Lock()
-	conn, err := d.open()
-	if err != nil {
-		d.mu.Unlock()
-		return nil, err
-	}
-	_, err = conn.Exec(query, args...)
-	conn.Close()
+	_, err := d.conn.Exec(query, args...)
 	d.mu.Unlock()
 
 	if err != nil {
@@ -445,13 +418,7 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 // DeleteTarget removes a target by id.
 func (d *Database) DeleteTarget(targetID int) (bool, error) {
 	d.mu.Lock()
-	conn, err := d.open()
-	if err != nil {
-		d.mu.Unlock()
-		return false, err
-	}
-	res, err := conn.Exec("DELETE FROM targets WHERE id = ?", targetID)
-	conn.Close()
+	res, err := d.conn.Exec("DELETE FROM targets WHERE id = ?", targetID)
 	d.mu.Unlock()
 
 	if err != nil {
@@ -463,11 +430,7 @@ func (d *Database) DeleteTarget(targetID int) (bool, error) {
 
 // ListDueTargets returns enabled targets due for a check.
 func (d *Database) ListDueTargets(nowTS float64) ([]Target, error) {
-	conn, err := d.open()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	conn := d.conn
 
 	rows, err := conn.Query(`
 		SELECT * FROM targets
@@ -498,14 +461,10 @@ func (d *Database) ListDueTargets(nowTS float64) ([]Target, error) {
 
 // GetLatestModelStatuses returns model statuses from the latest run.
 func (d *Database) GetLatestModelStatuses(targetID int) ([]ModelStatus, error) {
-	conn, err := d.open()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	conn := d.conn
 
 	var runID int
-	err = conn.QueryRow(
+	err := conn.QueryRow(
 		"SELECT id FROM runs WHERE target_id = ? ORDER BY started_at DESC LIMIT 1",
 		targetID,
 	).Scan(&runID)
@@ -547,16 +506,10 @@ func (d *Database) GetLatestModelStatuses(targetID int) ([]ModelStatus, error) {
 // CreateRun inserts a new "running" run.
 func (d *Database) CreateRun(targetID int, startedAt float64, logFile string) (int, error) {
 	d.mu.Lock()
-	conn, err := d.open()
-	if err != nil {
-		d.mu.Unlock()
-		return 0, err
-	}
-	res, err := conn.Exec(
+	res, err := d.conn.Exec(
 		"INSERT INTO runs (target_id, started_at, status, log_file) VALUES (?, ?, 'running', ?)",
 		targetID, startedAt, logFile,
 	)
-	conn.Close()
 	d.mu.Unlock()
 
 	if err != nil {
@@ -569,17 +522,11 @@ func (d *Database) CreateRun(targetID int, startedAt float64, logFile string) (i
 // FinishRun updates a run with final results.
 func (d *Database) FinishRun(runID int, status string, finishedAt float64, total, success, fail int, runError *string) error {
 	d.mu.Lock()
-	conn, err := d.open()
-	if err != nil {
-		d.mu.Unlock()
-		return err
-	}
-	_, err = conn.Exec(`
+	_, err := d.conn.Exec(`
 		UPDATE runs SET status = ?, finished_at = ?, total = ?, success = ?, fail = ?, error = ?
 		WHERE id = ?`,
 		status, finishedAt, total, success, fail, runError, runID,
 	)
-	conn.Close()
 	d.mu.Unlock()
 	return err
 }
@@ -587,12 +534,7 @@ func (d *Database) FinishRun(runID int, status string, finishedAt float64, total
 // UpdateTargetAfterRun updates cached run stats on the target row.
 func (d *Database) UpdateTargetAfterRun(targetID int, lastRunAt float64, lastStatus string, lastTotal, lastSuccess, lastFail int, lastLogFile string, lastError *string) error {
 	d.mu.Lock()
-	conn, err := d.open()
-	if err != nil {
-		d.mu.Unlock()
-		return err
-	}
-	_, err = conn.Exec(`
+	_, err := d.conn.Exec(`
 		UPDATE targets SET
 			last_run_at = ?, last_status = ?, last_total = ?,
 			last_success = ?, last_fail = ?, last_log_file = ?,
@@ -601,7 +543,6 @@ func (d *Database) UpdateTargetAfterRun(targetID int, lastRunAt float64, lastSta
 		lastRunAt, lastStatus, lastTotal, lastSuccess, lastFail,
 		lastLogFile, lastError, float64(time.Now().UnixMilli())/1000.0, targetID,
 	)
-	conn.Close()
 	d.mu.Unlock()
 	return err
 }
@@ -613,15 +554,8 @@ func (d *Database) InsertModelRows(runID, targetID int, rows []map[string]any) e
 	}
 
 	d.mu.Lock()
-	conn, err := d.open()
+	tx, err := d.conn.Begin()
 	if err != nil {
-		d.mu.Unlock()
-		return err
-	}
-
-	tx, err := conn.Begin()
-	if err != nil {
-		conn.Close()
 		d.mu.Unlock()
 		return err
 	}
@@ -634,7 +568,6 @@ func (d *Database) InsertModelRows(runID, targetID int, rows []map[string]any) e
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		tx.Rollback()
-		conn.Close()
 		d.mu.Unlock()
 		return err
 	}
@@ -659,25 +592,19 @@ func (d *Database) InsertModelRows(runID, targetID int, rows []map[string]any) e
 		)
 		if err != nil {
 			tx.Rollback()
-			conn.Close()
 			d.mu.Unlock()
 			return err
 		}
 	}
 
 	err = tx.Commit()
-	conn.Close()
 	d.mu.Unlock()
 	return err
 }
 
 // ListRuns returns recent runs for a target.
 func (d *Database) ListRuns(targetID, limit int) ([]Run, error) {
-	conn, err := d.open()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	conn := d.conn
 
 	rows, err := conn.Query(`
 		SELECT * FROM runs WHERE target_id = ?
@@ -703,11 +630,7 @@ func (d *Database) ListRuns(targetID, limit int) ([]Run, error) {
 
 // GetLatestRun returns the most recent run for a target.
 func (d *Database) GetLatestRun(targetID int) (*Run, error) {
-	conn, err := d.open()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	conn := d.conn
 
 	row := conn.QueryRow(`
 		SELECT * FROM runs WHERE target_id = ?
@@ -721,11 +644,7 @@ func (d *Database) GetLatestRun(targetID int) (*Run, error) {
 
 // ListLogs returns model detection results (logs) for a target.
 func (d *Database) ListLogs(targetID int, runID *int, limit int) ([]ModelRow, error) {
-	conn, err := d.open()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	conn := d.conn
 
 	query := "SELECT * FROM run_models WHERE target_id = ?"
 	args := []any{targetID}

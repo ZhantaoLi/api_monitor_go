@@ -461,6 +461,10 @@ func (ms *MonitorService) TriggerTarget(targetID int, force bool) (bool, string)
 		ms.mu.Unlock()
 		return false, "target already running"
 	}
+	if !force && len(ms.runningTargets) >= ms.maxParallelTargets {
+		ms.mu.Unlock()
+		return false, "max parallel targets reached"
+	}
 	ms.runningTargets[targetID] = true
 	ms.mu.Unlock()
 
