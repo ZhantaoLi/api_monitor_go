@@ -1,0 +1,18 @@
+# Binaries
+*.exe
+api-monitor
+
+# Runtime data
+data/
+*.db
+
+# Go build cache
+vendor/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

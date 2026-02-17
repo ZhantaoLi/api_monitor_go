@@ -1,0 +1,9 @@
+# Runtime data
+data/
+*.db
+
+# IDE / Git
+.git/
+.gitignore
+.vscode/
+*.md
