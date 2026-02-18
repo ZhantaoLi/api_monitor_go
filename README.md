@@ -31,26 +31,34 @@
 
 ```text
 api_monitor_go/
-├─ main.go
-├─ handler.go
-├─ monitor.go
-├─ db.go
-├─ sse.go
-├─ go.mod
-├─ go.sum
-├─ Dockerfile
-├─ docker-compose.yml
-├─ .gitignore
-├─ README.md
-├─ LICENSE
-├─ web/
-│  ├─ index.html
-│  ├─ log_viewer.html
-│  ├─ analysis.html
-│  └─ assets/
-└─ data/                  # 运行后生成（默认忽略）
-   ├─ registry.db
-   └─ logs/
+├── data/                   # 运行期数据目录（默认忽略）
+│   ├── logs/               # JSONL 明细日志目录
+│   └── registry.db         # SQLite 主数据库文件
+├── web/                    # 前端页面与静态资源
+│   ├── assets/             # 页面脚本、样式与第三方资源
+│   │   ├── vendor/         # 第三方前端库与字体文件
+│   │   ├── analysis.js     # 分析页逻辑
+│   │   ├── dashboard.js    # 主界面逻辑（含拖拽排序）
+│   │   ├── log-viewer.js   # 日志页逻辑
+│   │   ├── main.js         # 通用工具与鉴权逻辑
+│   │   ├── styles.css      # 全局样式
+│   │   └── tailwind.config.js # Tailwind 运行时配置
+│   ├── analysis.html       # 分析页面
+│   ├── index.html          # 主页面（渠道总览）
+│   └── log_viewer.html     # 日志查看页面
+├── .dockerignore           # Docker 构建忽略规则
+├── .gitignore              # Git 忽略规则
+├── db.go                   # 数据层：表结构、迁移、CRUD
+├── docker-compose.yml      # Docker Compose 启动配置
+├── Dockerfile              # 镜像构建定义
+├── go.mod                  # Go 模块定义
+├── go.sum                  # Go 依赖校验锁定
+├── handler.go              # HTTP API 处理与参数校验
+├── LICENSE                 # MIT 许可证
+├── main.go                 # 程序入口与路由注册
+├── monitor.go              # 调度、模型探测、结果写入
+├── README.md               # 项目说明文档
+└── sse.go                  # SSE 事件总线与鉴权中间件
 ```
 
 ## 环境变量
