@@ -2,12 +2,13 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +18,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	utls "github.com/refraction-networking/utls"
+	"golang.org/x/net/http2"
 )
 
 // ---------------------------------------------------------------------------
@@ -69,19 +73,77 @@ func normalizeBaseURL(baseURL string) string {
 
 func authHeaders(apiKey string) map[string]string {
 	return map[string]string{
-		"Authorization": "Bearer " + apiKey,
-		"User-Agent":    "api-monitor/1.0",
-		"Accept":        "application/json",
+		"Authorization":   "Bearer " + apiKey,
+		"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+		"Accept":          "application/json, text/plain, */*",
+		"Accept-Language": "en-US,en;q=0.9",
 	}
 }
 
-func httpClient(timeoutS float64, verifySSL bool) *http.Client {
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: !verifySSL},
+// utlsTransport wraps http.Transport to use uTLS for Chrome-like TLS fingerprinting.
+type utlsTransport struct {
+	insecureSkipVerify bool
+}
+
+func (t *utlsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	host := req.URL.Hostname()
+	port := req.URL.Port()
+	if port == "" {
+		if req.URL.Scheme == "https" {
+			port = "443"
+		} else {
+			return http.DefaultTransport.RoundTrip(req)
+		}
 	}
+
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	conn, err := dialer.DialContext(req.Context(), "tcp", net.JoinHostPort(host, port))
+	if err != nil {
+		return nil, fmt.Errorf("dial: %w", err)
+	}
+
+	tlsCfg := &utls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: t.insecureSkipVerify,
+	}
+	uConn := utls.UClient(conn, tlsCfg, utls.HelloChrome_Auto)
+	if err := uConn.HandshakeContext(req.Context()); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("tls handshake: %w", err)
+	}
+
+	alpn := uConn.ConnectionState().NegotiatedProtocol
+
+	if alpn == "h2" {
+		// Server negotiated HTTP/2, use h2 transport.
+		h2t := &http2.Transport{}
+		h2conn, err := h2t.NewClientConn(uConn)
+		if err != nil {
+			uConn.Close()
+			return nil, fmt.Errorf("h2 client conn: %w", err)
+		}
+		return h2conn.RoundTrip(req)
+	}
+
+	// HTTP/1.1 fallback.
+	tr := &http.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return uConn, nil
+		},
+		DisableKeepAlives: true,
+	}
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		uConn.Close()
+		return nil, err
+	}
+	return resp, nil
+}
+
+func httpClient(timeoutS float64, verifySSL bool) *http.Client {
 	return &http.Client{
 		Timeout:   time.Duration(timeoutS * float64(time.Second)),
-		Transport: transport,
+		Transport: &utlsTransport{insecureSkipVerify: !verifySSL},
 	}
 }
 

@@ -9,41 +9,23 @@
   <!-- Shared Utils (auth, theme, etc.) -->
   <script src="/static/assets/main.js"></script>
   <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            zinc: { 850: '#26262a', 900: '#1e1e21', 950: '#121215' }
-          }
-        }
-      }
-    }
-  </script>
+  <script src="/static/assets/vendor/tailwindcss.js"></script>
+  <script src="/static/assets/tailwind.config.js"></script>
 
   <!-- Phosphor Icons -->
-  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <link rel="stylesheet" href="/static/assets/vendor/phosphor-bold.css">
+  <link rel="stylesheet" href="/static/assets/vendor/phosphor-duotone.css">
 
   <!-- Alpine.js -->
-  <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script defer src="/static/assets/vendor/alpine-collapse.min.js"></script>
+  <script defer src="/static/assets/vendor/alpine.min.js"></script>
 
   <!-- Shared Assets -->
   <link rel="stylesheet" href="/static/assets/styles.css">
-  <script src="/static/assets/main.js"></script>
-  <style>
-    .hide-scrollbar {
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-    }
-
-    .hide-scrollbar::-webkit-scrollbar {
-      display: none;
-    }
-  </style>
+  <!-- Page JS -->
+  <script src="/static/assets/log-viewer.js"></script>
 </head>
+
 
 <body
   class="bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 h-screen bg-grid transition-colors duration-300 overflow-hidden flex flex-col"
@@ -284,95 +266,8 @@
     </div>
   </main>
 
-  <script>
-    function logViewer() {
-      return {
-        targetId: new URLSearchParams(window.location.search).get('target_id'),
-        target: {},
-        logs: [],
-        loading: false,
-        search: '',
-        filterStatus: 'all',
-        selectedId: null,
-        activeTab: 'overview', // overview, content, trace
 
-        async init() {
-          Utils.initTheme();
-          if (this.targetId) {
-            this.refresh();
-          }
-        },
 
-        async refresh() {
-          this.loading = true;
-          try {
-            const [tRes, lRes] = await Promise.all([
-              Utils.authFetch(`/api/targets/${this.targetId}`),
-              Utils.authFetch(`/api/targets/${this.targetId}/logs?limit=100&scope=latest`)
-            ]);
-
-            if (tRes.ok) {
-              const resData = await tRes.json();
-              this.target = resData.item || resData;
-            }
-
-            // Handle logs
-            if (lRes.ok) {
-              const data = await lRes.json();
-              this.logs = (data.items || []).map(l => ({
-                ...l,
-                tool_calls: typeof l.tool_calls === 'string' ? JSON.parse(l.tool_calls) : l.tool_calls
-              }));
-
-              // Select first if none selected
-              if (!this.selectedId && this.logs.length > 0) {
-                this.selectedId = this.logs[0].id;
-              }
-            }
-          } catch (e) {
-            console.error(e);
-          } finally {
-            this.loading = false;
-          }
-        },
-
-        get filteredLogs() {
-          let items = this.logs;
-          if (this.search) {
-            const q = this.search.toLowerCase();
-            items = items.filter(l =>
-              (l.model || '').toLowerCase().includes(q) ||
-              (l.content || '').toLowerCase().includes(q)
-            );
-          }
-          if (this.filterStatus === 'success') items = items.filter(l => l.success);
-          if (this.filterStatus === 'fail') items = items.filter(l => !l.success);
-          return items;
-        },
-
-        get selectedLog() {
-          return this.logs.find(l => l.id === this.selectedId);
-        },
-
-        get stats() {
-          const total = this.logs.length;
-          const success = this.logs.filter(l => l.success).length;
-          const rate = total ? Math.round((success / total) * 100) : 0;
-
-          const successLogs = this.logs.filter(l => l.success);
-          const avg = successLogs.length
-            ? (successLogs.reduce((a, b) => a + b.duration, 0) / successLogs.length).toFixed(3)
-            : '0.000';
-          return { successRate: rate, avgLatency: avg };
-        },
-
-        selectLog(log) {
-          this.selectedId = log.id;
-          this.activeTab = 'overview';
-        }
-      }
-    }
-  </script>
   <svg xmlns="http://www.w3.org/2000/svg" style="width:0;height:0;position:absolute;">
     <defs>
       <filter id="glass-distortion" x="0%" y="0%" width="100%" height="100%">

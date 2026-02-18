@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('/static/assets/vendor/google-fonts.css');
 
 [x-cloak] {
     display: none !important;
@@ -179,6 +179,56 @@ body {
     background-color: #71717a;
 }
 
+
+/* Hide scrollbar (log_viewer) */
+.hide-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+/* Glassmorphism (analysis page) */
+.glass {
+    background: rgba(30, 41, 59, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.light .glass {
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+/* Grid lines background (analysis) */
+.grid-bg {
+    background-size: 40px 40px;
+    background-image: linear-gradient(to right, rgba(51, 65, 85, 0.1) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(51, 65, 85, 0.1) 1px, transparent 1px);
+}
+
+/* Transitions */
+.transition-all-300 {
+    transition: all 0.3s ease-in-out;
+}
+
+/* Status Glow (analysis) */
+.glow-success {
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.3);
+}
+
+.glow-error {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+/* JSON Pre */
+pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
 
 /* Liquid Glass Effect */
 :root {

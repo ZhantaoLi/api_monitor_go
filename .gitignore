@@ -6,9 +6,6 @@ api-monitor
 data/
 *.db
 
-# Go build cache
-vendor/
-
 # IDE
 .vscode/
 .idea/
