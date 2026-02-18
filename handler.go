@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // writeJSON sends a JSON response with the given status code.
@@ -48,6 +50,102 @@ func queryInt(r *http.Request, name string, def, min, max int) int {
 	return n
 }
 
+func anyInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		if math.Trunc(n) != n {
+			return 0, false
+		}
+		return int(n), true
+	default:
+		return 0, false
+	}
+}
+
+func anyFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	default:
+		return 0, false
+	}
+}
+
+func validateTargetPayload(payload map[string]any) error {
+	if v, ok := payload["name"]; ok {
+		s := strings.TrimSpace(stringFromAny(v, ""))
+		if s == "" || len(s) > 128 {
+			return fmt.Errorf("name must be 1-128 chars")
+		}
+	}
+	if v, ok := payload["base_url"]; ok {
+		s := strings.TrimSpace(stringFromAny(v, ""))
+		if len(s) < 3 || len(s) > 512 {
+			return fmt.Errorf("base_url must be 3-512 chars")
+		}
+	}
+	if v, ok := payload["api_key"]; ok {
+		s := stringFromAny(v, "")
+		if len(s) < 1 || len(s) > 2048 {
+			return fmt.Errorf("api_key must be 1-2048 chars")
+		}
+	}
+	if v, ok := payload["interval_min"]; ok {
+		n, ok := anyInt(v)
+		if !ok || n < 1 || n > 1440 {
+			return fmt.Errorf("interval_min must be an integer between 1 and 1440")
+		}
+	}
+	if v, ok := payload["timeout_s"]; ok {
+		f, ok := anyFloat(v)
+		if !ok || f < 3.0 || f > 300.0 {
+			return fmt.Errorf("timeout_s must be between 3.0 and 300.0")
+		}
+	}
+	if v, ok := payload["max_models"]; ok {
+		n, ok := anyInt(v)
+		if !ok || n < 0 || n > 5000 {
+			return fmt.Errorf("max_models must be an integer between 0 and 5000")
+		}
+	}
+	if v, ok := payload["sort_order"]; ok {
+		n, ok := anyInt(v)
+		if !ok || n < 1 || n > 1000000 {
+			return fmt.Errorf("sort_order must be an integer between 1 and 1000000")
+		}
+	}
+	if v, ok := payload["prompt"]; ok {
+		s := strings.TrimSpace(stringFromAny(v, ""))
+		if s == "" || len(s) > 4000 {
+			return fmt.Errorf("prompt must be 1-4000 chars")
+		}
+	}
+	if v, ok := payload["anthropic_version"]; ok {
+		s := strings.TrimSpace(stringFromAny(v, ""))
+		if len(s) < 4 || len(s) > 64 {
+			return fmt.Errorf("anthropic_version must be 4-64 chars")
+		}
+	}
+	if v, ok := payload["source_url"]; ok && v != nil {
+		s, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("source_url must be a string or null")
+		}
+		if len(strings.TrimSpace(s)) > 1024 {
+			return fmt.Errorf("source_url must be <= 1024 chars")
+		}
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -60,7 +158,7 @@ type Handlers struct {
 }
 
 // targetRuntimeFields enriches a Target with computed fields for the API response.
-func (h *Handlers) targetRuntimeFields(t *Target) map[string]any {
+func (h *Handlers) targetRuntimeFieldsWithData(t *Target, running bool, models []ModelStatus) map[string]any {
 	total := 0
 	if t.LastTotal != nil {
 		total = *t.LastTotal
@@ -74,9 +172,6 @@ func (h *Handlers) targetRuntimeFields(t *Target) map[string]any {
 		rate := math.Round(float64(success)*1000.0/float64(total)) / 10.0
 		successRate = &rate
 	}
-
-	running := h.monitor.IsTargetRunning(t.ID)
-	models, _ := h.db.GetLatestModelStatuses(t.ID)
 
 	result := map[string]any{
 		"id":                t.ID,
@@ -100,11 +195,18 @@ func (h *Handlers) targetRuntimeFields(t *Target) map[string]any {
 		"last_log_file":     t.LastLogFile,
 		"last_error":        t.LastError,
 		"source_url":        t.SourceURL,
+		"sort_order":        t.SortOrder,
 		"last_success_rate": successRate,
 		"running":           running,
 		"latest_models":     models,
 	}
 	return result
+}
+
+func (h *Handlers) targetRuntimeFields(t *Target) map[string]any {
+	running := h.monitor.IsTargetRunning(t.ID)
+	models, _ := h.db.GetLatestModelStatuses(t.ID)
+	return h.targetRuntimeFieldsWithData(t, running, models)
 }
 
 // Health — GET /api/health (no auth)
@@ -156,9 +258,26 @@ func (h *Handlers) ListTargets(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
 		return
 	}
+
+	targetIDs := make([]int, 0, len(targets))
+	for i := range targets {
+		targetIDs = append(targetIDs, targets[i].ID)
+	}
+	modelsByTarget, err := h.db.GetLatestModelStatusesBatch(targetIDs)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+		return
+	}
+
+	runningSet := make(map[int]bool)
+	for _, id := range h.monitor.RunningTargetIDs() {
+		runningSet[id] = true
+	}
+
 	items := make([]map[string]any, 0, len(targets))
 	for i := range targets {
-		items = append(items, h.targetRuntimeFields(&targets[i]))
+		t := &targets[i]
+		items = append(items, h.targetRuntimeFieldsWithData(t, runningSet[t.ID], modelsByTarget[t.ID]))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -197,6 +316,10 @@ func (h *Handlers) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "name, base_url, api_key are required"})
 		return
 	}
+	if err := validateTargetPayload(payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
+		return
+	}
 
 	target, err := h.db.CreateTarget(payload)
 	if err != nil {
@@ -226,6 +349,10 @@ func (h *Handlers) PatchTarget(w http.ResponseWriter, r *http.Request) {
 	var updates map[string]any
 	if err := readJSON(r, &updates); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
+		return
+	}
+	if err := validateTargetPayload(updates); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
 		return
 	}
 
@@ -340,6 +467,10 @@ func (h *Handlers) GetLogs(w http.ResponseWriter, r *http.Request) {
 	if scope == "" {
 		scope = "latest"
 	}
+	if scope != "latest" && scope != "all" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid scope"})
+		return
+	}
 	limit := queryInt(r, "limit", 5000, 1, 20000)
 
 	var chosenRunID *int
@@ -351,21 +482,23 @@ func (h *Handlers) GetLogs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid run_id"})
 			return
 		}
-		// Verify the run belongs to this target
-		runs, _ := h.db.ListRuns(id, 200)
-		for i := range runs {
-			if runs[i].ID == rid {
-				chosenRun = &runs[i]
-				chosenRunID = &rid
-				break
-			}
+		run, err := h.db.GetRun(id, rid)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+			return
 		}
-		if chosenRun == nil {
+		if run == nil {
 			writeJSON(w, http.StatusNotFound, map[string]any{"detail": "run not found"})
 			return
 		}
+		chosenRun = run
+		chosenRunID = &run.ID
 	} else if scope == "latest" {
-		latest, _ := h.db.GetLatestRun(id)
+		latest, err := h.db.GetLatestRun(id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+			return
+		}
 		if latest != nil {
 			chosenRun = latest
 			chosenRunID = &latest.ID

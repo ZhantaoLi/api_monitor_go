@@ -62,6 +62,14 @@ const Utils = {
         return new EventSource(url);
     },
 
+    async copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text ?? '');
+        } catch (err) {
+            console.error('Failed to copy to clipboard', err);
+        }
+    },
+
     // ---------------------------------------------------------------
     // Format timestamp (seconds) to readable string
     // ---------------------------------------------------------------

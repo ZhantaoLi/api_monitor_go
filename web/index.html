@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>API Monitor(Go)</title>
+  <title>API Monitor (Go)</title>
 
   <!-- Tailwind CSS -->
   <script src="/static/assets/vendor/tailwindcss.js"></script>
@@ -17,12 +17,13 @@
   <!-- Alpine.js -->
   <script defer src="/static/assets/vendor/alpine-collapse.min.js"></script>
   <script defer src="/static/assets/vendor/alpine.min.js"></script>
+  <script src="/static/assets/vendor/Sortable.min.js"></script>
 
   <!-- Shared Assets -->
-  <link rel="stylesheet" href="/static/assets/styles.css">
-  <script src="/static/assets/main.js"></script>
+  <link rel="stylesheet" href="/static/assets/styles.css?v=sidebar">
+  <script src="/static/assets/main.js?v=sidebar"></script>
   <!-- Page JS -->
-  <script src="/static/assets/dashboard.js"></script>
+  <script src="/static/assets/dashboard.js?v=sidebar"></script>
 </head>
 
 <body
@@ -44,7 +45,7 @@
             API <span class="font-normal text-zinc-500 dark:text-zinc-400 ml-1">Monitor</span>
           </span>
         </div>
-        <a href="https://github.com/ZhantaoLi/api_monitor" target="_blank" rel="noopener noreferrer"
+        <a href="https://github.com/ZhantaoLi/api_monitor_go" target="_blank" rel="noopener noreferrer"
           class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
           title="GitHub">
           <i class="ph-bold ph-github-logo text-lg"></i>
@@ -75,6 +76,7 @@
 
       <!-- Actions -->
       <div class="flex items-center gap-3">
+        <span x-show="savingOrder" class="text-xs text-indigo-500 font-medium hidden sm:inline">Saving order...</span>
         <button @click="refreshData()"
           class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-indigo-500 transition-colors"
           title="Refresh Data">
@@ -98,62 +100,75 @@
   <main class="max-w-7xl mx-auto px-4 py-8 space-y-6 mb-24">
 
     <!-- List -->
-    <div class="space-y-4">
+    <div class="space-y-4" id="channel-list">
       <template x-for="t in filteredTargets" :key="t.id">
-        <div
-          class="glass-panel rounded-xl overflow-hidden transition-all duration-300 hover:border-zinc-300 dark:hover:border-zinc-700"
+        <div data-channel-card :data-id="t.id"
+          class="glass-panel group relative rounded-xl transition-all duration-300 hover:border-zinc-300 dark:hover:border-zinc-700 p-4 border border-transparent"
           x-data="{ expanded: false }">
 
-          <!-- Row Header -->
-          <div class="p-5 flex items-center justify-between group cursor-pointer" @click="expanded = !expanded">
-            <div class="flex items-center gap-5">
-              <!-- Status Dot -->
-              <div class="relative flex items-center justify-center w-4 h-4">
-                <span class="status-dot w-3 h-3 transition-colors duration-300" :class="{
-                    'healthy': t.last_status === 'healthy',
-                    'degraded': t.last_status === 'degraded',
-                    'down': ['down', 'error'].includes(t.last_status),
-                    'unknown': !t.last_status
-                  }"></span>
-                <span x-show="t.running"
-                  class="absolute inline-flex w-full h-full rounded-full opacity-75 bg-sky-400 animate-ping"></span>
-              </div>
-
-              <!-- Info -->
-              <div>
-                <div class="flex items-center gap-2">
-                  <h3 class="font-bold text-base" x-text="t.name"></h3>
-                  <span x-show="!t.enabled"
-                    class="px-1.5 py-0.5 rounded text-xxs bg-zinc-200 dark:bg-zinc-800 text-zinc-500 border border-zinc-300 dark:border-zinc-700">DISABLED</span>
-                </div>
-                <div class="text-xs text-zinc-500 font-mono mt-0.5 flex items-center gap-2">
-                  <span x-text="t.base_url"></span>
-                  <span class="opacity-30">|</span>
-                  <span class="flex items-center gap-1">
-                    <i class="ph-bold ph-clock"></i>
-                    <span x-text="Utils.fmtTime(t.last_run_at)"></span>
-                  </span>
-                </div>
-              </div>
+          <!-- Row Content -->
+          <div class="flex items-center gap-4">
+            <!-- Drag Handle (SortableJS Target) -->
+            <div
+              class="drag-handle cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 -ml-2 transition-colors touch-none"
+              :class="isDragSortEnabled() ? '' : 'cursor-not-allowed opacity-30 pointer-events-none'"
+              title="Drag to reorder">
+              <i class="ph-bold ph-dots-six-vertical text-xl"></i>
             </div>
 
-            <!-- Right Stats & Actions -->
-            <div class="flex items-center gap-6">
-              <!-- Health Bar -->
-              <div class="flex flex-col items-end gap-1 w-32" x-show="t.enabled && t.last_total > 0">
-                <div class="text-xs font-bold" x-text="t.last_success_rate + '% Success'"></div>
-                <div class="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                  <div class="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                    :style="`width: ${t.last_success_rate}%`"></div>
+            <!-- Main Info -->
+            <div class="flex-1 min-w-0" @click="expanded = !expanded">
+              <div class="flex items-center justify-between cursor-pointer">
+                <div class="flex items-center gap-4">
+                  <!-- Status Dot -->
+                  <div class="relative flex items-center justify-center w-4 h-4">
+                    <span class="status-dot w-3 h-3 transition-colors duration-300" :class="{
+                          'healthy': t.last_status === 'healthy',
+                          'degraded': t.last_status === 'degraded',
+                          'down': ['down', 'error'].includes(t.last_status),
+                          'unknown': !t.last_status
+                        }"></span>
+                    <span x-show="t.running"
+                      class="absolute inline-flex w-full h-full rounded-full opacity-75 bg-sky-400 animate-ping"></span>
+                  </div>
+
+                  <!-- Name & Meta -->
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <h3 class="font-bold text-base text-zinc-800 dark:text-zinc-100" x-text="t.name"></h3>
+                      <span x-show="!t.enabled"
+                        class="px-1.5 py-0.5 rounded text-xxs bg-zinc-200 dark:bg-zinc-800 text-zinc-500 border border-zinc-300 dark:border-zinc-700">DISABLED</span>
+                    </div>
+                    <div class="text-xs text-zinc-500 font-mono mt-0.5 flex items-center gap-2 truncate">
+                      <span x-text="t.base_url"></span>
+                      <span class="opacity-30">|</span>
+                      <span class="flex items-center gap-1">
+                        <i class="ph-bold ph-clock"></i>
+                        <span x-text="Utils.fmtTime(t.last_run_at)"></span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right Side: Stats & Chevron -->
+                <div class="flex items-center gap-6">
+                  <!-- Health Bar -->
+                  <div class="flex flex-col items-end gap-1 w-24 sm:w-32 hidden sm:flex"
+                    x-show="t.enabled && t.last_total > 0">
+                    <div class="text-xs font-bold" x-text="t.last_success_rate + '% Success'"></div>
+                    <div class="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                      <div class="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                        :style="`width: ${t.last_success_rate}%`"></div>
+                    </div>
+                  </div>
+
+                  <button
+                    class="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-transform duration-300"
+                    :class="expanded ? 'rotate-180' : ''">
+                    <i class="ph-bold ph-caret-down"></i>
+                  </button>
                 </div>
               </div>
-
-              <!-- Chevron -->
-              <button
-                class="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-transform duration-300"
-                :class="expanded ? 'rotate-180' : ''">
-                <i class="ph-bold ph-caret-down"></i>
-              </button>
             </div>
           </div>
 
@@ -261,7 +276,7 @@
               <option value="all">All Protocols</option>
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
-              <option value="google">Google</option>
+              <option value="gemini">Google/Gemini</option>
             </select>
           </div>
 

@@ -115,8 +115,10 @@ func authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// Check ?token= query param (for SSE / EventSource)
-		if r.URL.Query().Get("token") == apiToken {
+		// Only allow ?token= on SSE endpoint (EventSource cannot set custom headers).
+		if r.Method == http.MethodGet &&
+			r.URL.Path == "/api/events" &&
+			r.URL.Query().Get("token") == apiToken {
 			next.ServeHTTP(w, r)
 			return
 		}

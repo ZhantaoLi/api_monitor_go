@@ -378,30 +378,30 @@ type EventCallback func(eventType, data string)
 
 // MonitorService manages detection scheduling and execution.
 type MonitorService struct {
-	db                *Database
-	logDir            string
-	detectConcurrency int
+	db                 *Database
+	logDir             string
+	detectConcurrency  int
 	maxParallelTargets int
-	enableLogCleanup  bool
-	logMaxBytes       int64
+	enableLogCleanup   bool
+	logMaxBytes        int64
 
-	mu              sync.Mutex
-	runningTargets  map[int]bool
-	activeLogFiles  map[string]bool
-	cleanupMu       sync.Mutex
-	eventCallback   EventCallback
-	stopCh          chan struct{}
-	started         bool
+	mu             sync.Mutex
+	runningTargets map[int]bool
+	activeLogFiles map[string]bool
+	cleanupMu      sync.Mutex
+	eventCallback  EventCallback
+	stopCh         chan struct{}
+	started        bool
 }
 
 // MonitorConfig holds configuration for a new MonitorService.
 type MonitorConfig struct {
-	DB                *Database
-	LogDir            string
-	DetectConcurrency int
+	DB                 *Database
+	LogDir             string
+	DetectConcurrency  int
 	MaxParallelTargets int
-	EnableLogCleanup  bool
-	LogMaxBytes       int64
+	EnableLogCleanup   bool
+	LogMaxBytes        int64
 }
 
 // NewMonitorService creates a new monitor.
@@ -414,15 +414,15 @@ func NewMonitorService(cfg MonitorConfig) *MonitorService {
 	}
 	_ = os.MkdirAll(cfg.LogDir, 0o755)
 	return &MonitorService{
-		db:                cfg.DB,
-		logDir:            cfg.LogDir,
-		detectConcurrency: cfg.DetectConcurrency,
+		db:                 cfg.DB,
+		logDir:             cfg.LogDir,
+		detectConcurrency:  cfg.DetectConcurrency,
 		maxParallelTargets: cfg.MaxParallelTargets,
-		enableLogCleanup:  cfg.EnableLogCleanup,
-		logMaxBytes:       cfg.LogMaxBytes,
-		runningTargets:    make(map[int]bool),
-		activeLogFiles:    make(map[string]bool),
-		stopCh:            make(chan struct{}),
+		enableLogCleanup:   cfg.EnableLogCleanup,
+		logMaxBytes:        cfg.LogMaxBytes,
+		runningTargets:     make(map[int]bool),
+		activeLogFiles:     make(map[string]bool),
+		stopCh:             make(chan struct{}),
 	}
 }
 
@@ -563,6 +563,16 @@ func (ms *MonitorService) runTarget(target *Target) {
 		log.Printf("[monitor] create run failed target=%s: %v", target.Name, err)
 		return
 	}
+	markRunError := func(lastStatus string, total, success, fail int, runErr error) {
+		endedAt := float64(time.Now().UnixMilli()) / 1000.0
+		errStr := runErr.Error()
+		if err := ms.db.FinishRun(runID, "error", endedAt, total, success, fail, &errStr); err != nil {
+			log.Printf("[monitor] finish run(error) failed target=%s run_id=%d: %v", target.Name, runID, err)
+		}
+		if err := ms.db.UpdateTargetAfterRun(target.ID, endedAt, lastStatus, total, success, fail, logFile, &errStr); err != nil {
+			log.Printf("[monitor] update target(error) failed target=%s run_id=%d: %v", target.Name, runID, err)
+		}
+	}
 
 	log.Printf("[monitor] run start target=%s id=%d", target.Name, target.ID)
 
@@ -570,10 +580,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 
 	models, err := ms.getModels(target, client)
 	if err != nil {
-		endedAt := float64(time.Now().UnixMilli()) / 1000.0
-		errStr := err.Error()
-		ms.db.FinishRun(runID, "error", endedAt, 0, 0, 0, &errStr)
-		ms.db.UpdateTargetAfterRun(target.ID, endedAt, "error", 0, 0, 0, logFile, &errStr)
+		markRunError("error", 0, 0, 0, err)
 		log.Printf("[monitor] run failed target=%s: %v", target.Name, err)
 		return
 	}
@@ -608,25 +615,38 @@ func (ms *MonitorService) runTarget(target *Target) {
 
 	// Collect results and write log file
 	var rows []map[string]any
-	f, _ := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		markRunError("error", 0, 0, 0, fmt.Errorf("open log file failed: %w", err))
+		log.Printf("[monitor] run failed target=%s: open log file failed: %v", target.Name, err)
+		return
+	}
+	var writeErr error
 	for dr := range resultCh {
 		row := dr.row
 		row["target_id"] = target.ID
 		row["run_id"] = runID
 		row["target_name"] = target.Name
-		if f != nil {
-			line, _ := json.Marshal(row)
-			f.Write(line)
-			f.Write([]byte("\n"))
+		if writeErr == nil {
+			line, err := json.Marshal(row)
+			if err != nil {
+				writeErr = fmt.Errorf("marshal log row failed: %w", err)
+			} else {
+				if _, err := f.Write(line); err != nil {
+					writeErr = fmt.Errorf("write log row failed: %w", err)
+				} else if _, err := f.Write([]byte("\n")); err != nil {
+					writeErr = fmt.Errorf("write log newline failed: %w", err)
+				}
+			}
 		}
 		rows = append(rows, row)
 	}
-	if f != nil {
-		f.Close()
+	if err := f.Close(); err != nil && writeErr == nil {
+		writeErr = fmt.Errorf("close log file failed: %w", err)
 	}
-
-	// Insert into DB
-	ms.db.InsertModelRows(runID, target.ID, rows)
+	if writeErr != nil {
+		log.Printf("[monitor] target=%s log file write issue: %v", target.Name, writeErr)
+	}
 
 	total := len(rows)
 	successCount := 0
@@ -636,6 +656,13 @@ func (ms *MonitorService) runTarget(target *Target) {
 		}
 	}
 	failCount := total - successCount
+
+	// Insert into DB
+	if err := ms.db.InsertModelRows(runID, target.ID, rows); err != nil {
+		markRunError("error", total, successCount, failCount, fmt.Errorf("insert model rows failed: %w", err))
+		log.Printf("[monitor] run failed target=%s: insert model rows failed: %v", target.Name, err)
+		return
+	}
 
 	var targetStatus string
 	switch {
@@ -650,8 +677,14 @@ func (ms *MonitorService) runTarget(target *Target) {
 	}
 
 	endedAt := float64(time.Now().UnixMilli()) / 1000.0
-	ms.db.FinishRun(runID, "completed", endedAt, total, successCount, failCount, nil)
-	ms.db.UpdateTargetAfterRun(target.ID, endedAt, targetStatus, total, successCount, failCount, logFile, nil)
+	if err := ms.db.FinishRun(runID, "completed", endedAt, total, successCount, failCount, nil); err != nil {
+		log.Printf("[monitor] finish run(completed) failed target=%s run_id=%d: %v", target.Name, runID, err)
+		return
+	}
+	if err := ms.db.UpdateTargetAfterRun(target.ID, endedAt, targetStatus, total, successCount, failCount, logFile, nil); err != nil {
+		log.Printf("[monitor] update target(completed) failed target=%s run_id=%d: %v", target.Name, runID, err)
+		return
+	}
 
 	log.Printf("[monitor] run finished target=%s id=%d status=%s total=%d success=%d fail=%d",
 		target.Name, target.ID, targetStatus, total, successCount, failCount)

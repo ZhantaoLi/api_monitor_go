@@ -71,7 +71,8 @@ func (d *Database) InitDB() error {
 			last_fail INTEGER,
 			last_log_file TEXT,
 			last_error TEXT,
-			source_url TEXT
+			source_url TEXT,
+			sort_order INTEGER NOT NULL DEFAULT 0
 		);
 
 		CREATE TABLE IF NOT EXISTS runs (
@@ -137,6 +138,7 @@ func (d *Database) migrateDB() error {
 	defer rows.Close()
 
 	hasSourceURL := false
+	hasSortOrder := false
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -149,10 +151,28 @@ func (d *Database) migrateDB() error {
 		if name == "source_url" {
 			hasSourceURL = true
 		}
+		if name == "sort_order" {
+			hasSortOrder = true
+		}
 	}
 	if !hasSourceURL {
 		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN source_url TEXT")
 	}
+	if !hasSortOrder {
+		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+	}
+	_, _ = d.conn.Exec(`
+		WITH ordered AS (
+			SELECT id, ROW_NUMBER() OVER (ORDER BY id ASC) AS rn
+			FROM targets
+		)
+		UPDATE targets
+		SET sort_order = (
+			SELECT rn FROM ordered WHERE ordered.id = targets.id
+		)
+		WHERE sort_order IS NULL OR sort_order <= 0
+	`)
+	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_targets_sort_order ON targets(sort_order, id)")
 	return nil
 }
 
@@ -183,6 +203,7 @@ type Target struct {
 	LastLogFile      *string  `json:"last_log_file"`
 	LastError        *string  `json:"last_error"`
 	SourceURL        *string  `json:"source_url"`
+	SortOrder        int      `json:"sort_order"`
 }
 
 // Run represents a detection run.
@@ -222,6 +243,7 @@ type ModelRow struct {
 
 // ModelStatus is a summary of a model's latest detection result.
 type ModelStatus struct {
+	Protocol *string  `json:"protocol"`
 	Model    string   `json:"model"`
 	Success  bool     `json:"success"`
 	Duration *float64 `json:"duration"`
@@ -241,7 +263,7 @@ func scanTarget(r interface{ Scan(dest ...any) error }) (*Target, error) {
 		&t.Prompt, &t.AnthropicVersion, &t.MaxModels,
 		&t.CreatedAt, &t.UpdatedAt,
 		&t.LastRunAt, &t.LastStatus, &t.LastTotal, &t.LastSuccess,
-		&t.LastFail, &t.LastLogFile, &t.LastError, &t.SourceURL,
+		&t.LastFail, &t.LastLogFile, &t.LastError, &t.SourceURL, &t.SortOrder,
 	)
 	if err != nil {
 		return nil, err
@@ -298,7 +320,10 @@ func scanModelRow(r interface{ Scan(dest ...any) error }) (*ModelRow, error) {
 func (d *Database) ListTargets() ([]Target, error) {
 	conn := d.conn
 
-	rows, err := conn.Query("SELECT * FROM targets ORDER BY id ASC")
+	rows, err := conn.Query(`
+		SELECT * FROM targets
+		ORDER BY CASE WHEN sort_order > 0 THEN sort_order ELSE id END ASC, id ASC
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -345,15 +370,22 @@ func (d *Database) CreateTarget(payload map[string]any) (*Target, error) {
 	anthropicVersion := stringFromAny(payload["anthropic_version"], "2025-09-29")
 	maxModels := intFromAny(payload["max_models"], 0)
 	sourceURL := nullStringFromAny(payload["source_url"])
+	sortOrder := intFromAny(payload["sort_order"], 0)
 
 	d.mu.Lock()
+	if sortOrder <= 0 {
+		if err := d.conn.QueryRow("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM targets").Scan(&sortOrder); err != nil {
+			d.mu.Unlock()
+			return nil, err
+		}
+	}
 	res, err := d.conn.Exec(`
 		INSERT INTO targets (
 			name, base_url, api_key, enabled, interval_min, timeout_s, verify_ssl,
-			prompt, anthropic_version, max_models, source_url, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			prompt, anthropic_version, max_models, source_url, sort_order, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		name, baseURL, apiKey, boolToInt(enabled), intervalMin, timeoutS, boolToInt(verifySSL),
-		prompt, anthropicVersion, maxModels, sourceURL, now, now,
+		prompt, anthropicVersion, maxModels, sourceURL, sortOrder, now, now,
 	)
 	d.mu.Unlock()
 
@@ -374,7 +406,7 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 		"name": true, "base_url": true, "api_key": true,
 		"enabled": true, "interval_min": true, "timeout_s": true,
 		"verify_ssl": true, "prompt": true, "anthropic_version": true,
-		"max_models": true, "source_url": true,
+		"max_models": true, "source_url": true, "sort_order": true,
 	}
 
 	var setClauses []string
@@ -386,7 +418,7 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 		switch key {
 		case "enabled", "verify_ssl":
 			args = append(args, boolToInt(boolFromAny(val, false)))
-		case "interval_min", "max_models":
+		case "interval_min", "max_models", "sort_order":
 			args = append(args, intFromAny(val, 0))
 		case "timeout_s":
 			args = append(args, floatFromAny(val, 30.0))
@@ -476,7 +508,7 @@ func (d *Database) GetLatestModelStatuses(targetID int) ([]ModelStatus, error) {
 	}
 
 	rows, err := conn.Query(`
-		SELECT model, success, duration, error
+		SELECT protocol, model, success, duration, error
 		FROM run_models WHERE run_id = ? ORDER BY model ASC`, runID)
 	if err != nil {
 		return nil, err
@@ -487,7 +519,7 @@ func (d *Database) GetLatestModelStatuses(targetID int) ([]ModelStatus, error) {
 	for rows.Next() {
 		var ms ModelStatus
 		var success int
-		if err := rows.Scan(&ms.Model, &success, &ms.Duration, &ms.Error); err != nil {
+		if err := rows.Scan(&ms.Protocol, &ms.Model, &success, &ms.Duration, &ms.Error); err != nil {
 			return nil, err
 		}
 		ms.Success = success != 0
@@ -497,6 +529,59 @@ func (d *Database) GetLatestModelStatuses(targetID int) ([]ModelStatus, error) {
 		statuses = []ModelStatus{}
 	}
 	return statuses, rows.Err()
+}
+
+// GetLatestModelStatusesBatch returns latest model statuses for multiple targets.
+func (d *Database) GetLatestModelStatusesBatch(targetIDs []int) (map[int][]ModelStatus, error) {
+	result := make(map[int][]ModelStatus, len(targetIDs))
+	if len(targetIDs) == 0 {
+		return result, nil
+	}
+	for _, id := range targetIDs {
+		result[id] = []ModelStatus{}
+	}
+
+	placeholders := make([]string, 0, len(targetIDs))
+	args := make([]any, 0, len(targetIDs))
+	for _, id := range targetIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+
+	query := `
+		WITH latest_runs AS (
+			SELECT target_id, MAX(id) AS run_id
+			FROM runs
+			WHERE target_id IN (` + joinStrings(placeholders, ",") + `)
+			GROUP BY target_id
+		)
+		SELECT rm.target_id, rm.protocol, rm.model, rm.success, rm.duration, rm.error
+		FROM run_models rm
+		JOIN latest_runs lr
+		  ON rm.run_id = lr.run_id AND rm.target_id = lr.target_id
+		ORDER BY rm.target_id ASC, rm.model ASC
+	`
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var targetID int
+		var ms ModelStatus
+		var success int
+		if err := rows.Scan(&targetID, &ms.Protocol, &ms.Model, &success, &ms.Duration, &ms.Error); err != nil {
+			return nil, err
+		}
+		ms.Success = success != 0
+		result[targetID] = append(result[targetID], ms)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -635,6 +720,19 @@ func (d *Database) GetLatestRun(targetID int) (*Run, error) {
 	row := conn.QueryRow(`
 		SELECT * FROM runs WHERE target_id = ?
 		ORDER BY started_at DESC, id DESC LIMIT 1`, targetID)
+	r, err := scanRun(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return r, err
+}
+
+// GetRun returns a specific run by target and run id.
+func (d *Database) GetRun(targetID, runID int) (*Run, error) {
+	row := d.conn.QueryRow(
+		"SELECT * FROM runs WHERE target_id = ? AND id = ?",
+		targetID, runID,
+	)
 	r, err := scanRun(row)
 	if err == sql.ErrNoRows {
 		return nil, nil

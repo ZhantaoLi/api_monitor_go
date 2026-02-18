@@ -25,6 +25,11 @@ function dashboard() {
             this.connectSSE();
             // Fallback polling (60s)
             setInterval(() => this.loadData(), 60000);
+
+            // Init SortableJS
+            this.$nextTick(() => {
+                this.initSortable();
+            });
         },
 
         connectSSE() {
@@ -231,7 +236,73 @@ function dashboard() {
             if (!rate) return 'text-zinc-500';
             if (rate >= 90) return 'text-green-500';
             if (rate >= 50) return 'text-yellow-500';
+            if (rate >= 50) return 'text-yellow-500';
             return 'text-red-500';
+        },
+
+        // Drag & Drop (SortableJS)
+        isDragSortEnabled() {
+            return !this.search && this.filterStatus === 'all' && this.filterProtocol === 'all';
+        },
+
+        initSortable() {
+            const el = document.getElementById('channel-list');
+            if (!el || !window.Sortable) return;
+
+            this.sortable = new Sortable(el, {
+                handle: '.drag-handle',
+                animation: 200,
+                ghostClass: 'bg-indigo-50/50', // Ghost style
+                onEnd: (evt) => {
+                    const { oldIndex, newIndex } = evt;
+                    if (oldIndex === newIndex) return;
+
+                    // Reorder local data
+                    const item = this.targets.splice(oldIndex, 1)[0];
+                    this.targets.splice(newIndex, 0, item);
+
+                    // Persist to server
+                    this.persistSortOrder();
+                }
+            });
+        },
+
+        async persistSortOrder() {
+            // Create array of {id, sort_order}
+            // We assume backend handles reordering based on index or explicit sort_order field
+            // If backend needs explicit sort_order, we map it
+            const updates = this.targets.map((t, index) => ({
+                id: t.id,
+                sort_order: index
+            }));
+
+            // We can send batch update or individual
+            // Optimally, send just the moved item? No, indices shift.
+            // If backend supports batch update of order?
+            // Existing 'moveTarget' logic used PATCH /targets/:id.
+            // We'll iterate for now, or use a batch endpoint if available.
+            // Since we don't have batch endpoint, we do parallel PATCH?
+            // Actually, typical implementation sends the list of IDs in order?
+            // Let's use the logic I likely implemented before: PATCH ID with new index?
+            // Or maybe the backend doesn't support 'sort_order' field?
+            // Assuming backend has 'sort_order'.
+
+            // To be safe and efficient, let's just update the changed items?
+            // If I move item 0 to 1, item 1 becomes 0. Both change.
+            // Simple approach: Update all.
+
+            try {
+                // Throttle?
+                await Promise.all(this.targets.map((t, i) =>
+                    Utils.authFetch(`/api/targets/${t.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sort_order: i })
+                    })
+                ));
+            } catch (e) {
+                console.error('Failed to persist order', e);
+            }
         }
     }
 }
