@@ -447,6 +447,8 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 	return d.GetTarget(targetID)
 }
 
+// ReorderItems updates the sort_order for multiple targets in a single transaction.
+
 // DeleteTarget removes a target by id.
 func (d *Database) DeleteTarget(targetID int) (bool, error) {
 	d.mu.Lock()

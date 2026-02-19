@@ -25,12 +25,8 @@ function dashboard() {
             this.connectSSE();
             // Fallback polling (60s)
             setInterval(() => this.loadData(), 60000);
-
-            // Init SortableJS
-            this.$nextTick(() => {
-                this.initSortable();
-            });
         },
+
 
         connectSSE() {
             try {
@@ -52,7 +48,9 @@ function dashboard() {
                 const res = await Utils.authFetch('/api/targets');
                 const data = await res.json();
                 this.targets = data.items || [];
-            } catch (e) { console.error('Load failed', e); }
+            } catch (e) {
+                console.error('Failed to load targets', e);
+            }
         },
 
         async refreshData() {
@@ -236,73 +234,64 @@ function dashboard() {
             if (!rate) return 'text-zinc-500';
             if (rate >= 90) return 'text-green-500';
             if (rate >= 50) return 'text-yellow-500';
-            if (rate >= 50) return 'text-yellow-500';
             return 'text-red-500';
         },
 
-        // Drag & Drop (SortableJS)
-        isDragSortEnabled() {
-            return !this.search && this.filterStatus === 'all' && this.filterProtocol === 'all';
+        // Drag and Drop Logic
+        dragSourceId: null,
+
+        get canDrag() {
+            return !this.search && this.filterProtocol === 'all' && this.filterStatus === 'all';
         },
 
-        initSortable() {
-            const el = document.getElementById('channel-list');
-            if (!el || !window.Sortable) return;
-
-            this.sortable = new Sortable(el, {
-                handle: '.drag-handle',
-                animation: 200,
-                ghostClass: 'bg-indigo-50/50', // Ghost style
-                onEnd: (evt) => {
-                    const { oldIndex, newIndex } = evt;
-                    if (oldIndex === newIndex) return;
-
-                    // Reorder local data
-                    const item = this.targets.splice(oldIndex, 1)[0];
-                    this.targets.splice(newIndex, 0, item);
-
-                    // Persist to server
-                    this.persistSortOrder();
-                }
-            });
-        },
-
-        async persistSortOrder() {
-            // Create array of {id, sort_order}
-            // We assume backend handles reordering based on index or explicit sort_order field
-            // If backend needs explicit sort_order, we map it
-            const updates = this.targets.map((t, index) => ({
-                id: t.id,
-                sort_order: index
-            }));
-
-            // We can send batch update or individual
-            // Optimally, send just the moved item? No, indices shift.
-            // If backend supports batch update of order?
-            // Existing 'moveTarget' logic used PATCH /targets/:id.
-            // We'll iterate for now, or use a batch endpoint if available.
-            // Since we don't have batch endpoint, we do parallel PATCH?
-            // Actually, typical implementation sends the list of IDs in order?
-            // Let's use the logic I likely implemented before: PATCH ID with new index?
-            // Or maybe the backend doesn't support 'sort_order' field?
-            // Assuming backend has 'sort_order'.
-
-            // To be safe and efficient, let's just update the changed items?
-            // If I move item 0 to 1, item 1 becomes 0. Both change.
-            // Simple approach: Update all.
-
-            try {
-                // Throttle?
-                await Promise.all(this.targets.map((t, i) =>
-                    Utils.authFetch(`/api/targets/${t.id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sort_order: i })
-                    })
-                ));
-            } catch (e) {
-                console.error('Failed to persist order', e);
+        handleDragStart(e, id) {
+            if (!this.canDrag) {
+                e.preventDefault();
+                return;
             }
+            this.dragSourceId = id;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', id);
+
+            // Set the drag image to the entire card
+            const card = e.target.closest('[data-channel-card]');
+            if (card) {
+                // Use the card element as the drag image
+                e.dataTransfer.setDragImage(card, 20, 20);
+                // Defer adding transparency so the drag image (ghost) captured by the browser remains fully opaque
+                requestAnimationFrame(() => {
+                    card.style.opacity = '0.5';
+                });
+            }
+        },
+
+        handleDragEnd(e) {
+            this.dragSourceId = null;
+            if (e.target && e.target.closest('[data-channel-card]')) {
+                e.target.closest('[data-channel-card]').style.opacity = '1';
+            }
+        },
+
+        handleDragOver(e) {
+            if (this.canDrag) {
+                e.preventDefault(); // Necessary to allow dropping
+                e.dataTransfer.dropEffect = 'move';
+            }
+        },
+
+        handleDrop(e, targetId) {
+            if (!this.canDrag || !this.dragSourceId || this.dragSourceId === targetId) return;
+
+            const fromIndex = this.targets.findIndex(t => t.id === this.dragSourceId);
+            const toIndex = this.targets.findIndex(t => t.id === targetId);
+
+            if (fromIndex > -1 && toIndex > -1) {
+                // Remove from old position
+                const [item] = this.targets.splice(fromIndex, 1);
+                // Insert at new position
+                this.targets.splice(toIndex, 0, item);
+            }
+            this.dragSourceId = null;
         }
     }
 }

@@ -1,6 +1,8 @@
 services:
   api-monitor-go:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: api-monitor-go
     restart: unless-stopped
     ports:

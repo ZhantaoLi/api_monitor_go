@@ -17,7 +17,10 @@
   <!-- Alpine.js -->
   <script defer src="/static/assets/vendor/alpine-collapse.min.js"></script>
   <script defer src="/static/assets/vendor/alpine.min.js"></script>
-  <script src="/static/assets/vendor/Sortable.min.js"></script>
+
+  <!-- Drag-Drop Touch Polyfill -->
+  <script src="/static/assets/vendor/DragDropTouch.js"></script>
+
 
   <!-- Shared Assets -->
   <link rel="stylesheet" href="/static/assets/styles.css?v=sidebar">
@@ -76,7 +79,6 @@
 
       <!-- Actions -->
       <div class="flex items-center gap-3">
-        <span x-show="savingOrder" class="text-xs text-indigo-500 font-medium hidden sm:inline">Saving order...</span>
         <button @click="refreshData()"
           class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-indigo-500 transition-colors"
           title="Refresh Data">
@@ -104,22 +106,24 @@
       <template x-for="t in filteredTargets" :key="t.id">
         <div data-channel-card :data-id="t.id"
           class="glass-panel group relative rounded-xl transition-all duration-300 hover:border-zinc-300 dark:hover:border-zinc-700 p-4 border border-transparent"
-          x-data="{ expanded: false }">
+          x-data="{ expanded: false }" @dragover.prevent="handleDragOver($event)" @drop="handleDrop($event, t.id)">
 
           <!-- Row Content -->
           <div class="flex items-center gap-4">
-            <!-- Drag Handle (SortableJS Target) -->
-            <div
-              class="drag-handle cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 -ml-2 transition-colors touch-none"
-              :class="isDragSortEnabled() ? '' : 'cursor-not-allowed opacity-30 pointer-events-none'"
-              title="Drag to reorder">
-              <i class="ph-bold ph-dots-six-vertical text-xl"></i>
-            </div>
 
             <!-- Main Info -->
-            <div class="flex-1 min-w-0" @click="expanded = !expanded">
-              <div class="flex items-center justify-between cursor-pointer">
+            <div class="flex-1 min-w-0 flex items-center gap-3">
+              <!-- Drag Handle -->
+              <div
+                class="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 transition-colors"
+                :class="{ 'opacity-30 cursor-not-allowed': !canDrag, 'hover:text-zinc-600 dark:hover:text-zinc-300': canDrag }"
+                draggable="true" @dragstart="handleDragStart($event, t.id)" @dragend="handleDragEnd($event)">
+                <i class="ph-bold ph-dots-six-vertical"></i>
+              </div>
+
+              <div class="flex-1 flex items-center justify-between cursor-pointer" @click="expanded = !expanded">
                 <div class="flex items-center gap-4">
+
                   <!-- Status Dot -->
                   <div class="relative flex items-center justify-center w-4 h-4">
                     <span class="status-dot w-3 h-3 transition-colors duration-300" :class="{
@@ -276,7 +280,7 @@
               <option value="all">All Protocols</option>
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
-              <option value="gemini">Google/Gemini</option>
+              <option value="gemini">Gemini</option>
             </select>
           </div>
 
