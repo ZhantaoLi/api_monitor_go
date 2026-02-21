@@ -495,6 +495,24 @@ func (ms *MonitorService) IsTargetRunning(targetID int) bool {
 	return ms.runningTargets[targetID]
 }
 
+// UpdateLogCleanupConfig updates cleanup settings at runtime.
+func (ms *MonitorService) UpdateLogCleanupConfig(enabled bool, maxSizeMB int) {
+	if maxSizeMB < 0 {
+		maxSizeMB = 0
+	}
+	ms.mu.Lock()
+	ms.enableLogCleanup = enabled
+	ms.logMaxBytes = int64(maxSizeMB) * 1024 * 1024
+	ms.mu.Unlock()
+}
+
+// LogCleanupConfig returns current cleanup settings.
+func (ms *MonitorService) LogCleanupConfig() (bool, int) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	return ms.enableLogCleanup, int(ms.logMaxBytes / 1024 / 1024)
+}
+
 // ScanDueTargets checks and triggers all due targets.
 func (ms *MonitorService) ScanDueTargets() {
 	nowTS := float64(time.Now().UnixMilli()) / 1000.0
@@ -912,7 +930,12 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 // ---------------------------------------------------------------------------
 
 func (ms *MonitorService) cleanupDataLogs() {
-	if !ms.enableLogCleanup || ms.logMaxBytes <= 0 {
+	ms.mu.Lock()
+	enabled := ms.enableLogCleanup
+	maxBytes := ms.logMaxBytes
+	ms.mu.Unlock()
+
+	if !enabled || maxBytes <= 0 {
 		return
 	}
 	ms.cleanupMu.Lock()
@@ -959,7 +982,7 @@ func (ms *MonitorService) cleanupDataLogs() {
 	for _, l := range logs {
 		totalBytes += l.size
 	}
-	if totalBytes <= ms.logMaxBytes {
+	if totalBytes <= maxBytes {
 		return
 	}
 
@@ -967,7 +990,7 @@ func (ms *MonitorService) cleanupDataLogs() {
 	var deletedFiles int
 	var deletedBytes int64
 	for i := len(logs) - 1; i >= 0; i-- {
-		if totalBytes <= ms.logMaxBytes {
+		if totalBytes <= maxBytes {
 			break
 		}
 		if err := os.Remove(logs[i].path); err != nil {
@@ -982,7 +1005,7 @@ func (ms *MonitorService) cleanupDataLogs() {
 		log.Printf("[monitor] cleanup data/logs removed files=%d reclaimed=%.2fMB (max_mb=%d)",
 			deletedFiles,
 			float64(deletedBytes)/1024.0/1024.0,
-			ms.logMaxBytes/1024/1024,
+			maxBytes/1024/1024,
 		)
 	}
 }

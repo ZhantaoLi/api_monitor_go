@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login - API Monitor</title>
+
+  <script src="/static/assets/vendor/tailwindcss.js"></script>
+  <script src="/static/assets/tailwind.config.js"></script>
+  <link rel="stylesheet" href="/static/assets/vendor/phosphor-bold.css">
+  <link rel="stylesheet" href="/static/assets/styles.css?v=admin">
+
+  <script src="/static/assets/main.js?v=admin"></script>
+  <script defer src="/static/assets/admin.js?v=admin"></script>
+</head>
+
+<body data-page="admin-login"
+  class="bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen bg-grid transition-colors duration-300">
+  <div class="min-h-screen flex items-center justify-center p-4">
+    <div class="glass-modal w-full max-w-md rounded-2xl p-6">
+      <div class="flex items-center justify-between mb-5">
+        <h1 class="text-lg font-bold flex items-center gap-2">
+          <i class="ph-bold ph-lock-key text-indigo-500"></i>
+          <span>Admin Login</span>
+        </h1>
+        <button id="theme-toggle-btn"
+          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+          <i class="ph-bold ph-sun dark:hidden"></i>
+          <i class="ph-bold ph-moon hidden dark:block"></i>
+        </button>
+      </div>
+
+      <p class="text-sm text-zinc-500 mb-4">
+        Enter admin password to manage proxy token, interval and cleanup settings.
+      </p>
+
+      <form id="admin-login-form" class="space-y-4">
+        <div class="space-y-1">
+          <label for="admin-password" class="text-xs font-bold text-zinc-500 uppercase tracking-wider">Password</label>
+          <div class="relative">
+            <input id="admin-password" type="password" required
+              class="w-full form-input rounded-lg pl-3 pr-10 py-2 text-sm font-mono" placeholder="ADMIN_PANEL_PASSWORD">
+            <button id="toggle-password-btn" type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              <i class="ph-bold ph-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <button id="login-submit-btn" type="submit"
+          class="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-colors">
+          Sign In
+        </button>
+      </form>
+
+      <div id="login-message" class="mt-4 hidden text-xs rounded-lg px-3 py-2"></div>
+
+      <div class="mt-5 text-xs text-zinc-500">
+        <a href="/" class="hover:text-indigo-500 transition-colors">Back to dashboard</a>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

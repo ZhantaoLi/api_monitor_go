@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Proxy Docs</title>
+
+    <script src="/static/assets/vendor/tailwindcss.js"></script>
+    <script src="/static/assets/tailwind.config.js"></script>
+
+    <link rel="stylesheet" href="/static/assets/vendor/phosphor-bold.css">
+    <link rel="stylesheet" href="/static/assets/styles.css?v=proxy-docs">
+    <script src="/static/assets/main.js?v=proxy-docs"></script>
+</head>
+
+<body
+    class="bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen bg-grid transition-colors duration-300">
+  <nav
+    class="sticky top-0 z-40 w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 cursor-pointer" onclick="window.location='/'">
+          <div class="relative w-8 h-8 flex items-center justify-center bg-zinc-900 dark:bg-white rounded-lg">
+            <i class="ph-bold ph-activity text-white dark:text-zinc-900 text-xl"></i>
+          </div>
+          <span class="text-xl font-bold text-zinc-900 dark:text-white">
+            API <span class="font-normal text-zinc-500 dark:text-zinc-400 ml-1">Monitor</span>
+          </span>
+        </div>
+        <a href="https://github.com/ZhantaoLi/api_monitor_go" target="_blank" rel="noopener noreferrer"
+          class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
+          title="GitHub">
+          <i class="ph-bold ph-github-logo text-lg"></i>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+    <main class="max-w-5xl mx-auto px-4 py-8">
+        <section class="glass-panel rounded-2xl border border-transparent p-6 md:p-8">
+            <h1 class="text-2xl md:text-3xl font-bold mb-2">API 代理文档</h1>
+            <p class="text-zinc-600 dark:text-zinc-400 mb-6">
+                服务默认端口为 <code class="font-mono text-sm">8081</code>（可通过环境变量 <code class="font-mono text-sm">PORT</code>
+                修改）。
+            </p>
+
+            <h2 class="text-lg font-bold mb-3">兼容端点</h2>
+            <div class="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-700 mb-6">
+                <table class="w-full text-sm">
+                    <thead class="bg-zinc-50 dark:bg-zinc-900/70">
+                        <tr>
+                            <th class="text-left px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">端点</th>
+                            <th class="text-left px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">兼容协议</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                                <code>GET /v1/models</code></td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">OpenAI-compatible Models
+                                API</td>
+                        </tr>
+                        <tr>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                                <code>POST /v1/chat/completions</code></td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">OpenAI Chat Completions
+                                API</td>
+                        </tr>
+                        <tr>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                                <code>POST /v1/messages</code></td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">Anthropic Claude
+                                Messages API</td>
+                        </tr>
+                        <tr>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                                <code>POST /v1/responses</code></td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">OpenAI Responses API
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                                <code>POST /v1beta/models/{model}:generateContent</code></td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">Google Gemini API</td>
+                        </tr>
+                        <tr>
+                            <td class="px-3 py-2"><code>POST /v1beta/models/{model}:streamGenerateContent</code></td>
+                            <td class="px-3 py-2">Google Gemini Streaming API</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2 class="text-lg font-bold mb-3">调用方式</h2>
+            <p class="text-zinc-600 dark:text-zinc-400 mb-2">请求头中携带代理密钥：</p>
+            <pre class="rounded-xl bg-zinc-900 text-zinc-100 p-4 text-xs md:text-sm overflow-x-auto mb-3"><code>curl http://localhost:8081/v1/models \
+  -H "Authorization: Bearer sk-your-proxy-key"</code></pre>
+            <pre class="rounded-xl bg-zinc-900 text-zinc-100 p-4 text-xs md:text-sm overflow-x-auto mb-4"><code>curl http://localhost:8081/v1/chat/completions \
+  -H "Authorization: Bearer sk-your-proxy-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'</code></pre>
+            <p class="text-zinc-600 dark:text-zinc-400 mb-6">
+                <code>/v1/models</code> 只返回最近检测中“成功通过”的模型；若为空，请先在主页执行一次渠道检测。
+            </p>
+
+            <h2 class="text-lg font-bold mb-3">可选路由控制</h2>
+            <ul class="list-disc pl-6 text-zinc-700 dark:text-zinc-300 mb-6 space-y-1">
+                <li><code>X-Target-Id: &lt;id&gt;</code>：指定转发到某个渠道（需在代理密钥允许范围内）。</li>
+                <li>或查询参数 <code>?target_id=&lt;id&gt;</code>。</li>
+            </ul>
+
+            <h2 class="text-lg font-bold mb-3">代理密钥管理（管理员 API）</h2>
+            <p class="text-zinc-600 dark:text-zinc-400 mb-2">以下端点仅允许后台管理会话访问（先在 <code>/admin/login</code> 登录）：</p>
+            <div class="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-700 mb-4">
+                <table class="w-full text-sm">
+                    <thead class="bg-zinc-50 dark:bg-zinc-900/70">
+                        <tr>
+                            <th class="text-left px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">端点</th>
+                            <th class="text-left px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                                <code>GET /api/proxy/keys</code></td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">查看代理密钥列表</td>
+                        </tr>
+                        <tr>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                                <code>POST /api/proxy/keys</code></td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">创建代理密钥（返回明文密钥，仅一次）</td>
+                        </tr>
+                        <tr>
+                            <td class="px-3 py-2"><code>DELETE /api/proxy/keys/{id}</code></td>
+                            <td class="px-3 py-2">撤销代理密钥</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="text-zinc-600 dark:text-zinc-400 mb-2">创建示例（已登录后台后，携带会话 Cookie）：</p>
+            <pre class="rounded-xl bg-zinc-900 text-zinc-100 p-4 text-xs md:text-sm overflow-x-auto"><code>curl -X POST http://localhost:8081/api/proxy/keys \
+  -H "Cookie: api_monitor_admin_session=your-session-cookie" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":"team-a",
+    "allowed_target_ids":[1,2],
+    "allowed_models":["gpt-*","claude-3-5-sonnet*"],
+    "description":"team-a proxy key"
+  }'</code></pre>
+        </section>
+    </main>
+</body>
+
+</html>

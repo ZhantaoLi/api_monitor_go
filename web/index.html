@@ -89,6 +89,15 @@
           <i class="ph-bold ph-sun dark:hidden"></i>
           <i class="ph-bold ph-moon hidden dark:block"></i>
         </button>
+        <a href="/docs/proxy"
+          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          title="Proxy Docs">
+          <i class="ph-bold ph-book-open-text"></i>
+        </a>
+        <a href="/admin"
+          class="flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 px-3 py-2 rounded-lg font-medium text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700">
+          <i class="ph-bold ph-gear-six"></i>
+        </a>
         <button @click="openCreateModal()"
           class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
           <i class="ph-bold ph-plus"></i>
@@ -178,7 +187,7 @@
 
           <!-- Expanded Details -->
           <div x-show="expanded" x-collapse>
-            <div class="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 p-5">
+            <div class="mt-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 p-5">
 
               <!-- Actions Bar -->
               <div class="flex justify-between items-center mb-4">
@@ -234,7 +243,7 @@
                   </div>
                 </template>
                 <template x-for="m in t.latest_models" :key="m.model">
-                  <div class="p-3 rounded-lg border bg-white dark:bg-zinc-900 shadow-sm transition-all"
+                  <div class="relative p-3 rounded-lg border bg-white dark:bg-zinc-900 shadow-sm transition-all"
                     :class="m.success ? 'border-emerald-500/30 text-zinc-800 dark:text-zinc-200' : 'border-rose-500/50 text-rose-500 bg-rose-50 dark:bg-rose-900/10'">
                     <div class="flex items-center justify-between mb-1">
                       <div class="w-1.5 h-1.5 rounded-full" :class="m.success ? 'bg-emerald-500' : 'bg-rose-500'"></div>
@@ -245,6 +254,60 @@
                     <div class="text-xs font-medium truncate" :title="m.model" x-text="m.model"></div>
                     <div x-show="m.error" class="mt-1 text-[10px] opacity-70 truncate border-t border-rose-500/20 pt-1"
                       x-text="m.error" :title="m.error"></div>
+
+                    <div class="mt-2" x-data="{ hoverPoint: null }">
+                      <div class="flex items-center justify-between text-[9px] uppercase tracking-wide text-zinc-500">
+                        <span>
+                          History (<span x-text="historyPointCount(m.history)"></span>pts)
+                        </span>
+                        <span class="flex items-center gap-1 text-[9px]">
+                          <i class="ph-bold ph-clock"></i>
+                          <span x-text="nextUpdateText(t)"></span>
+                        </span>
+                      </div>
+
+                      <div class="relative mt-1.5">
+                        <div class="flex items-end gap-[2px]">
+                          <template x-for="(p, idx) in getModelHistoryPoints(m.history)" :key="`${m.model}-${idx}-${p.timestamp || 'na'}`">
+                            <button type="button"
+                              class="h-7 flex-1 rounded-[2px] transition-transform hover:-translate-y-[1px]"
+                              :class="historyBarClass(p)"
+                              :title="p._placeholder ? 'No data' : `${historyStatusLabel(p)} | ${historyTimeLabel(p)} | ${historyLatencyLabel(p)}`"
+                              @mouseenter="hoverPoint = p._placeholder ? null : p"
+                              @mouseleave="hoverPoint = null"
+                              @focus="hoverPoint = p._placeholder ? null : p"
+                              @blur="hoverPoint = null">
+                            </button>
+                          </template>
+                        </div>
+
+                        <div class="mt-1 flex items-center justify-between text-[9px] uppercase tracking-wide text-zinc-400">
+                          <span>Past</span>
+                          <span>Now</span>
+                        </div>
+
+                        <div x-show="hoverPoint" x-transition
+                          class="absolute z-20 left-0 bottom-full mb-2 w-64 max-w-[80vw] rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 shadow-xl p-3 text-xs text-zinc-700 dark:text-zinc-200">
+                          <div class="flex items-center justify-between mb-2">
+                            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                              :class="hoverPoint.success ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300'"
+                              x-text="historyStatusLabel(hoverPoint)"></span>
+                            <span class="font-mono text-zinc-500 dark:text-zinc-400"
+                              x-text="historyTimeLabel(hoverPoint)"></span>
+                          </div>
+                          <div class="grid grid-cols-2 gap-y-1 gap-x-3">
+                            <span class="text-zinc-500 dark:text-zinc-400">Latency</span>
+                            <span class="font-mono text-right" x-text="historyLatencyLabel(hoverPoint)"></span>
+                            <span class="text-zinc-500 dark:text-zinc-400">Status Code</span>
+                            <span class="font-mono text-right" x-text="historyCodeLabel(hoverPoint)"></span>
+                          </div>
+                          <div x-show="hoverPoint && hoverPoint.error"
+                            class="mt-2 text-[11px] px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 truncate"
+                            :title="hoverPoint ? hoverPoint.error : ''"
+                            x-text="hoverPoint ? hoverPoint.error : ''"></div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </template>
               </div>
@@ -384,36 +447,6 @@
           </div>
         </div>
 
-        <!-- Advanced Collapse -->
-        <div x-data="{ showAdv: false }">
-          <button @click="showAdv = !showAdv" type="button"
-            class="text-xs font-bold text-indigo-500 flex items-center gap-1 hover:text-indigo-400">
-            <i class="ph-bold" :class="showAdv ? 'ph-caret-up' : 'ph-caret-down'"></i> Advanced Settings
-          </button>
-          <div x-show="showAdv" x-collapse class="mt-3 space-y-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-            <div class="space-y-1">
-              <label class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Max Models (0=All)</label>
-              <input type="number" x-model.number="form.max_models"
-                class="w-full form-input rounded-lg px-3 py-2 text-sm">
-            </div>
-            <div class="space-y-1">
-              <label class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Prompt</label>
-              <textarea x-model="form.prompt" rows="2"
-                class="w-full form-input rounded-lg px-3 py-2 text-sm font-mono"></textarea>
-            </div>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" x-model="form.verify_ssl"
-                class="rounded bg-zinc-800 border-zinc-600 text-indigo-600 focus:ring-0">
-              <span class="text-xs text-zinc-400">Verify SSL</span>
-            </label>
-            <div class="space-y-1">
-              <label class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Anthropic Version</label>
-              <input type="text" x-model="form.anthropic_version"
-                class="w-full form-input rounded-lg px-3 py-2 text-sm font-mono" placeholder="2023-06-01">
-            </div>
-          </div>
-        </div>
-
         <div x-show="formError" x-text="formError"
           class="p-2 text-xs text-rose-500 bg-rose-500/10 border border-rose-500/20 rounded-lg"></div>
       </div>
@@ -426,8 +459,6 @@
       </div>
     </div>
   </div>
-
-
 
   <svg xmlns="http://www.w3.org/2000/svg" style="width:0;height:0;position:absolute;">
     <defs>

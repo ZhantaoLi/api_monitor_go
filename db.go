@@ -111,6 +111,12 @@ func (d *Database) InitDB() error {
 			FOREIGN KEY(target_id) REFERENCES targets(id) ON DELETE CASCADE
 		);
 
+		CREATE TABLE IF NOT EXISTS app_settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at REAL NOT NULL
+		);
+
 		CREATE INDEX IF NOT EXISTS idx_targets_enabled_last_run
 		ON targets(enabled, last_run_at);
 
@@ -128,6 +134,96 @@ func (d *Database) InitDB() error {
 	}
 
 	return d.migrateDB()
+}
+
+// EnsureSettingDefault inserts a setting only when it does not exist.
+func (d *Database) EnsureSettingDefault(key, value string) error {
+	now := float64(time.Now().UnixMilli()) / 1000.0
+	d.mu.Lock()
+	_, err := d.conn.Exec(`
+		INSERT INTO app_settings (key, value, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO NOTHING
+	`, key, value, now)
+	d.mu.Unlock()
+	return err
+}
+
+// SetSetting upserts one app setting.
+func (d *Database) SetSetting(key, value string) error {
+	now := float64(time.Now().UnixMilli()) / 1000.0
+	d.mu.Lock()
+	_, err := d.conn.Exec(`
+		INSERT INTO app_settings (key, value, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			value = excluded.value,
+			updated_at = excluded.updated_at
+	`, key, value, now)
+	d.mu.Unlock()
+	return err
+}
+
+// GetSetting returns (value, found, error).
+func (d *Database) GetSetting(key string) (string, bool, error) {
+	var value string
+	err := d.conn.QueryRow("SELECT value FROM app_settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return value, true, nil
+}
+
+// GetSettings returns key->value for the provided keys.
+func (d *Database) GetSettings(keys []string) (map[string]string, error) {
+	out := make(map[string]string, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+
+	placeholders := make([]string, 0, len(keys))
+	args := make([]any, 0, len(keys))
+	for _, k := range keys {
+		placeholders = append(placeholders, "?")
+		args = append(args, k)
+	}
+
+	rows, err := d.conn.Query(`
+		SELECT key, value
+		FROM app_settings
+		WHERE key IN (`+joinStrings(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
+}
+
+// UpdateAllTargetIntervals sets interval_min for all targets. Returns affected count.
+func (d *Database) UpdateAllTargetIntervals(intervalMin int) (int64, error) {
+	now := float64(time.Now().UnixMilli()) / 1000.0
+	d.mu.Lock()
+	res, err := d.conn.Exec(`
+		UPDATE targets
+		SET interval_min = ?, updated_at = ?
+	`, intervalMin, now)
+	d.mu.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (d *Database) migrateDB() error {
@@ -243,11 +339,21 @@ type ModelRow struct {
 
 // ModelStatus is a summary of a model's latest detection result.
 type ModelStatus struct {
-	Protocol *string  `json:"protocol"`
-	Model    string   `json:"model"`
-	Success  bool     `json:"success"`
-	Duration *float64 `json:"duration"`
-	Error    *string  `json:"error"`
+	Protocol *string             `json:"protocol"`
+	Model    string              `json:"model"`
+	Success  bool                `json:"success"`
+	Duration *float64            `json:"duration"`
+	Error    *string             `json:"error"`
+	History  []ModelHistoryPoint `json:"history"`
+}
+
+// ModelHistoryPoint is one historical point for a model.
+type ModelHistoryPoint struct {
+	Success    bool     `json:"success"`
+	Duration   *float64 `json:"duration"`
+	Timestamp  *float64 `json:"timestamp"`
+	Error      *string  `json:"error"`
+	StatusCode *int     `json:"status_code"`
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +631,7 @@ func (d *Database) GetLatestModelStatuses(targetID int) ([]ModelStatus, error) {
 			return nil, err
 		}
 		ms.Success = success != 0
+		ms.History = []ModelHistoryPoint{}
 		statuses = append(statuses, ms)
 	}
 	if statuses == nil {
@@ -578,7 +685,88 @@ func (d *Database) GetLatestModelStatusesBatch(targetIDs []int) (map[int][]Model
 			return nil, err
 		}
 		ms.Success = success != 0
+		ms.History = []ModelHistoryPoint{}
 		result[targetID] = append(result[targetID], ms)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GetModelHistoriesBatch returns latest N history points for each model in each target.
+func (d *Database) GetModelHistoriesBatch(targetIDs []int, points int) (map[int]map[string][]ModelHistoryPoint, error) {
+	result := make(map[int]map[string][]ModelHistoryPoint, len(targetIDs))
+	if len(targetIDs) == 0 {
+		return result, nil
+	}
+	if points < 1 {
+		points = 1
+	}
+	if points > 200 {
+		points = 200
+	}
+
+	for _, id := range targetIDs {
+		result[id] = map[string][]ModelHistoryPoint{}
+	}
+
+	placeholders := make([]string, 0, len(targetIDs))
+	args := make([]any, 0, len(targetIDs)+1)
+	for _, id := range targetIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	args = append(args, points)
+
+	query := `
+		WITH ranked AS (
+			SELECT
+				target_id,
+				model,
+				success,
+				duration,
+				timestamp,
+				error,
+				status_code,
+				ROW_NUMBER() OVER (
+					PARTITION BY target_id, model
+					ORDER BY COALESCE(timestamp, 0) DESC, id DESC
+				) AS rn
+			FROM run_models
+			WHERE target_id IN (` + joinStrings(placeholders, ",") + `)
+		)
+		SELECT target_id, model, success, duration, timestamp, error, status_code, rn
+		FROM ranked
+		WHERE rn <= ?
+		ORDER BY target_id ASC, model ASC, rn DESC
+	`
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			targetID int
+			model    string
+			success  int
+			point    ModelHistoryPoint
+			rn       int
+		)
+		if err := rows.Scan(&targetID, &model, &success, &point.Duration, &point.Timestamp, &point.Error, &point.StatusCode, &rn); err != nil {
+			return nil, err
+		}
+		_ = rn
+		point.Success = success != 0
+		mm := result[targetID]
+		if mm == nil {
+			mm = map[string][]ModelHistoryPoint{}
+			result[targetID] = mm
+		}
+		mm[model] = append(mm[model], point)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

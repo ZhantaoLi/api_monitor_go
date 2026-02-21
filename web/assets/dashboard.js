@@ -14,9 +14,7 @@ function dashboard() {
 
         defaultForm: {
             name: '', base_url: '', api_key: '', source_url: '',
-            interval_min: 30, timeout_s: 30,
-            max_models: 0, prompt: 'What is the exact model identifier (model string) you are using for this chat/session?',
-            enabled: true, verify_ssl: false, anthropic_version: '2025-09-29'
+            interval_min: 30, timeout_s: 30
         },
 
         init() {
@@ -149,7 +147,14 @@ function dashboard() {
             }
 
             try {
-                const payload = { ...this.form };
+                const payload = {
+                    name: this.form.name,
+                    base_url: this.form.base_url,
+                    api_key: this.form.api_key,
+                    source_url: this.form.source_url ?? null,
+                    interval_min: this.form.interval_min,
+                    timeout_s: this.form.timeout_s
+                };
                 let url = '/api/targets';
                 let method = 'POST';
 
@@ -235,6 +240,74 @@ function dashboard() {
             if (rate >= 90) return 'text-green-500';
             if (rate >= 50) return 'text-yellow-500';
             return 'text-red-500';
+        },
+
+        historyPointCount(history) {
+            return Array.isArray(history) ? history.length : 0;
+        },
+
+        getModelHistoryPoints(history, maxPoints = 30) {
+            const src = Array.isArray(history) ? history : [];
+            const normalized = src.slice(-maxPoints).map(p => ({ ...p, _placeholder: false }));
+            const missing = maxPoints - normalized.length;
+            if (missing <= 0) return normalized;
+            const placeholders = Array.from({ length: missing }, () => ({
+                _placeholder: true,
+                success: null,
+                duration: null,
+                timestamp: null,
+                status_code: null,
+                error: null
+            }));
+            return placeholders.concat(normalized);
+        },
+
+        historyBarClass(point) {
+            if (!point || point._placeholder) {
+                return 'bg-zinc-200/70 dark:bg-zinc-700/40';
+            }
+            if (point.success) {
+                return 'bg-emerald-500';
+            }
+            if (point.status_code != null && point.status_code >= 500) {
+                return 'bg-rose-500';
+            }
+            if (point.status_code != null && point.status_code >= 400) {
+                return 'bg-amber-500';
+            }
+            return 'bg-amber-400';
+        },
+
+        historyStatusLabel(point) {
+            if (!point || point._placeholder) return 'NO DATA';
+            return point.success ? '正常' : '失败';
+        },
+
+        historyLatencyLabel(point) {
+            if (!point || point._placeholder || point.duration == null) return '--';
+            const ms = Math.round(Number(point.duration) * 1000);
+            return `${ms} ms`;
+        },
+
+        historyCodeLabel(point) {
+            if (!point || point._placeholder || point.status_code == null) return '--';
+            return String(point.status_code);
+        },
+
+        historyTimeLabel(point) {
+            if (!point || point._placeholder || point.timestamp == null) return '--';
+            return Utils.fmtTime(point.timestamp);
+        },
+
+        nextUpdateText(target) {
+            if (!target || !target.interval_min) return 'NEXT UPDATE --';
+            if (!target.last_run_at) return 'NEXT UPDATE SOON';
+            const now = Date.now() / 1000;
+            const eta = Number(target.last_run_at) + Number(target.interval_min) * 60 - now;
+            if (!Number.isFinite(eta) || eta <= 0) return 'NEXT UPDATE SOON';
+            const mm = Math.floor(eta / 60);
+            const ss = Math.floor(eta % 60);
+            return `NEXT IN ${mm}M ${String(ss).padStart(2, '0')}S`;
         },
 
         // Drag and Drop Logic

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel - API Monitor</title>
+
+  <script src="/static/assets/vendor/tailwindcss.js"></script>
+  <script src="/static/assets/tailwind.config.js"></script>
+  <link rel="stylesheet" href="/static/assets/vendor/phosphor-bold.css">
+  <link rel="stylesheet" href="/static/assets/styles.css?v=admin">
+
+  <script src="/static/assets/main.js?v=admin"></script>
+  <script defer src="/static/assets/admin.js?v=admin"></script>
+</head>
+
+<body data-page="admin-panel"
+  class="bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen bg-grid transition-colors duration-300">
+
+  <nav
+    class="sticky top-0 z-40 w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 cursor-pointer" onclick="window.location='/'">
+          <div class="relative w-8 h-8 flex items-center justify-center bg-zinc-900 dark:bg-white rounded-lg">
+            <i class="ph-bold ph-activity text-white dark:text-zinc-900 text-xl"></i>
+          </div>
+          <span class="text-xl font-bold text-zinc-900 dark:text-white">
+            API <span class="font-normal text-zinc-500 dark:text-zinc-400 ml-1">Monitor</span>
+          </span>
+        </div>
+        <a href="https://github.com/ZhantaoLi/api_monitor_go" target="_blank" rel="noopener noreferrer"
+          class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
+          title="GitHub">
+          <i class="ph-bold ph-github-logo text-lg"></i>
+        </a>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="theme-toggle-btn"
+          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+          <i class="ph-bold ph-sun dark:hidden"></i>
+          <i class="ph-bold ph-moon hidden dark:block"></i>
+        </button>
+        <button id="logout-btn"
+          class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold transition-colors flex items-center gap-1.5">
+          <i class="ph-bold ph-sign-out"></i>
+          Logout
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <section class="glass-panel rounded-2xl p-6 border border-transparent">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">System Administration</h1>
+        </div>
+      </div>
+    </section>
+
+    <div id="admin-alert" class="hidden rounded-lg px-4 py-3 text-sm"></div>
+
+    <section
+      class="glass-panel group relative rounded-xl transition-all duration-300 hover:border-zinc-300 dark:hover:border-zinc-700 p-5 border border-transparent space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-xxs font-bold uppercase tracking-wider text-zinc-500">Global Settings</div>
+          <h2 class="font-bold text-lg text-zinc-800 dark:text-zinc-100 mt-1">Authentication & Proxy</h2>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div
+          class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-4 space-y-2">
+          <label for="api-monitor-token"
+            class="text-xxs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="ph-bold ph-key text-indigo-500"></i>
+            API Monitor Token
+          </label>
+          <div class="relative">
+            <input id="api-monitor-token" type="password"
+              class="w-full form-input rounded-lg pl-3 pr-10 py-2 text-sm font-mono" placeholder="required">
+            <button id="toggle-api-token-btn" type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              <i class="ph-bold ph-eye"></i>
+            </button>
+          </div>
+          <p class="text-xs text-zinc-500">Used by protected APIs and SSE authentication.</p>
+        </div>
+
+        <div
+          class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-4 space-y-2">
+          <label for="admin-panel-password"
+            class="text-xxs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="ph-bold ph-lock text-indigo-500"></i>
+            Admin Panel Password
+          </label>
+          <div class="relative">
+            <input id="admin-panel-password" type="password"
+              class="w-full form-input rounded-lg pl-3 pr-10 py-2 text-sm font-mono" placeholder="required">
+            <button id="toggle-admin-password-btn" type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              <i class="ph-bold ph-eye"></i>
+            </button>
+          </div>
+          <p class="text-xs text-zinc-500">Used for `/admin/login`.</p>
+        </div>
+
+        <div
+          class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-4 space-y-2">
+          <label for="proxy-master-token"
+            class="text-xxs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="ph-bold ph-lightning text-indigo-500"></i>
+            Proxy Master Token
+          </label>
+          <div class="relative pr-24">
+            <input id="proxy-master-token" type="password"
+              class="w-full form-input rounded-lg pl-3 pr-10 py-2 text-sm font-mono" placeholder="optional">
+            <button id="toggle-proxy-token-btn" type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              <i class="ph-bold ph-eye"></i>
+            </button>
+          </div>
+          <button id="random-proxy-token-btn" type="button"
+            class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <i class="ph-bold ph-shuffle"></i>
+            Random (sk-)
+          </button>
+          <p class="text-xs text-zinc-500">When matched, this token can access all proxy routes directly.</p>
+        </div>
+
+        <div
+          class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-4 space-y-2">
+          <label class="text-xxs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="ph-bold ph-broom text-indigo-500"></i>
+            Auto Cleanup
+          </label>
+          <label class="flex items-center gap-2 mt-2 cursor-pointer">
+            <input id="log-cleanup-enabled" type="checkbox"
+              class="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600">
+            <span class="text-sm text-zinc-600 dark:text-zinc-300">Enable log cleanup</span>
+          </label>
+          <p class="text-xs text-zinc-500">Cleanup deletes old log files when size exceeds threshold.</p>
+        </div>
+
+        <div
+          class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-4 space-y-2">
+          <label for="log-max-size-mb" class="text-xxs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="ph-bold ph-hard-drives text-indigo-500"></i>
+            Max Log Size (MB)
+          </label>
+          <input id="log-max-size-mb" type="number" min="0" max="102400"
+            class="w-full form-input rounded-lg px-3 py-2 text-sm" />
+          <p class="text-xs text-zinc-500">Logs will be trimmed to this max size when cleanup is enabled.</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 pt-2">
+        <button id="save-general-btn"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
+          <i class="ph-bold ph-floppy-disk"></i>
+          Save Global Settings
+        </button>
+      </div>
+    </section>
+
+    <section
+      class="glass-panel group relative rounded-xl transition-all duration-300 hover:border-zinc-300 dark:hover:border-zinc-700 p-5 border border-transparent space-y-5">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <div class="text-xxs font-bold uppercase tracking-wider text-zinc-500">Channels</div>
+          <h2 class="font-bold text-lg text-zinc-800 dark:text-zinc-100 mt-1">Advanced Settings</h2>
+        </div>
+        <button id="refresh-channels-btn" type="button"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+          <i class="ph-bold ph-arrows-clockwise"></i>
+          Refresh
+        </button>
+      </div>
+
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden bg-white/70 dark:bg-zinc-900/60">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[720px] text-sm">
+            <thead class="bg-zinc-100/80 dark:bg-zinc-800/70 text-zinc-500 uppercase text-xxs tracking-wider">
+              <tr>
+                <th class="text-left px-4 py-3 font-bold">Name</th>
+                <th class="text-left px-4 py-3 font-bold">Base URL</th>
+                <th class="text-left px-4 py-3 font-bold">Interval</th>
+                <th class="text-left px-4 py-3 font-bold">Max Models</th>
+                <th class="text-right px-4 py-3 font-bold">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="admin-channel-list-body" class="divide-y divide-zinc-200 dark:divide-zinc-800"></tbody>
+          </table>
+        </div>
+        <div id="admin-channel-empty" class="hidden px-4 py-8 text-center text-sm text-zinc-500">
+          No channels found.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="channel-advanced-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div id="channel-advanced-backdrop" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+    <div
+      class="relative w-full max-w-2xl rounded-2xl overflow-hidden glass-modal border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+      <div
+        class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/70 dark:bg-zinc-900/70">
+        <div>
+          <h3 class="font-bold text-lg text-zinc-900 dark:text-zinc-100">Edit Channel Advanced Settings</h3>
+          <p id="channel-advanced-meta" class="text-xs text-zinc-500 mt-1"></p>
+        </div>
+        <button id="channel-advanced-close-btn" type="button"
+          class="text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">
+          <i class="ph-bold ph-x text-lg"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <div class="space-y-1">
+          <label for="channel-advanced-max-models"
+            class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Max Models (0=All)</label>
+          <input id="channel-advanced-max-models" type="number" min="0" max="5000"
+            class="w-full form-input rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div class="space-y-1">
+          <label for="channel-advanced-prompt"
+            class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Prompt</label>
+          <textarea id="channel-advanced-prompt" rows="4"
+            class="w-full form-input rounded-lg px-3 py-2 text-sm font-mono"></textarea>
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input id="channel-advanced-verify-ssl" type="checkbox"
+            class="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600">
+          <span class="text-sm text-zinc-600 dark:text-zinc-300">Verify SSL</span>
+        </label>
+        <div class="space-y-1">
+          <label for="channel-advanced-anthropic-version"
+            class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Anthropic Version</label>
+          <input id="channel-advanced-anthropic-version" type="text" placeholder="2025-09-29"
+            class="w-full form-input rounded-lg px-3 py-2 text-sm font-mono" />
+        </div>
+        <div id="channel-advanced-error"
+          class="hidden p-2 text-xs text-rose-500 bg-rose-500/10 border border-rose-500/20 rounded-lg"></div>
+      </div>
+
+      <div class="px-6 pb-6 flex gap-3">
+        <button id="channel-advanced-cancel-btn" type="button"
+          class="flex-1 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 text-sm font-bold transition-colors">Cancel</button>
+        <button id="channel-advanced-save-btn" type="button"
+          class="flex-1 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-lg shadow-indigo-500/20 transition-transform active:scale-95">Save Advanced Settings</button>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

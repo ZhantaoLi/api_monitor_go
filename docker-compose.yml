@@ -1,8 +1,8 @@
 services:
   api-monitor-go:
-    build:
-      context: .
-      network: host
+    image: lming001/api-monitor-go:tagname
+    pull_policy: always
+    platform: linux/amd64
     container_name: api-monitor-go
     restart: unless-stopped
     ports:
@@ -10,6 +10,7 @@ services:
     environment:
       - LOG_CLEANUP_ENABLED=1
       - LOG_MAX_SIZE_MB=128
-      - API_MONITOR_TOKEN=lming
+      - API_MONITOR_TOKEN=${API_MONITOR_TOKEN:-}
+      - ADMIN_PANEL_PASSWORD=${ADMIN_PANEL_PASSWORD:-}
     volumes:
       - ./data:/app/data

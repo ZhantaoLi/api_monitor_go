@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const modelHistoryPoints = 30
+
 // writeJSON sends a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -155,6 +157,7 @@ type Handlers struct {
 	db      *Database
 	monitor *MonitorService
 	bus     *SSEBus
+	admin   *AdminSessionManager
 }
 
 // targetRuntimeFields enriches a Target with computed fields for the API response.
@@ -206,7 +209,20 @@ func (h *Handlers) targetRuntimeFieldsWithData(t *Target, running bool, models [
 func (h *Handlers) targetRuntimeFields(t *Target) map[string]any {
 	running := h.monitor.IsTargetRunning(t.ID)
 	models, _ := h.db.GetLatestModelStatuses(t.ID)
+	historyByTarget, _ := h.db.GetModelHistoriesBatch([]int{t.ID}, modelHistoryPoints)
+	attachModelHistory(models, historyByTarget[t.ID])
 	return h.targetRuntimeFieldsWithData(t, running, models)
+}
+
+func attachModelHistory(models []ModelStatus, historyByModel map[string][]ModelHistoryPoint) {
+	for i := range models {
+		if historyByModel != nil {
+			models[i].History = historyByModel[models[i].Model]
+		}
+		if models[i].History == nil {
+			models[i].History = []ModelHistoryPoint{}
+		}
+	}
 }
 
 // Health — GET /api/health (no auth)
@@ -268,6 +284,11 @@ func (h *Handlers) ListTargets(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
 		return
 	}
+	historyByTarget, err := h.db.GetModelHistoriesBatch(targetIDs, modelHistoryPoints)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+		return
+	}
 
 	runningSet := make(map[int]bool)
 	for _, id := range h.monitor.RunningTargetIDs() {
@@ -277,7 +298,9 @@ func (h *Handlers) ListTargets(w http.ResponseWriter, r *http.Request) {
 	items := make([]map[string]any, 0, len(targets))
 	for i := range targets {
 		t := &targets[i]
-		items = append(items, h.targetRuntimeFieldsWithData(t, runningSet[t.ID], modelsByTarget[t.ID]))
+		models := modelsByTarget[t.ID]
+		attachModelHistory(models, historyByTarget[t.ID])
+		items = append(items, h.targetRuntimeFieldsWithData(t, runningSet[t.ID], models))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -328,7 +351,6 @@ func (h *Handlers) CreateTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target)})
 }
-
 
 // PatchTarget — PATCH /api/targets/{id}
 func (h *Handlers) PatchTarget(w http.ResponseWriter, r *http.Request) {

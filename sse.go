@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -97,28 +96,38 @@ func (b *SSEBus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 var apiToken string
+var apiTokenMu sync.RWMutex
 
-func initAuth() {
-	apiToken = strings.TrimSpace(os.Getenv("API_MONITOR_TOKEN"))
+func setAuthToken(token string) {
+	apiTokenMu.Lock()
+	apiToken = strings.TrimSpace(token)
+	apiTokenMu.Unlock()
 }
 
-// authMiddleware checks the Bearer token if API_MONITOR_TOKEN is set.
+func getAuthToken() string {
+	apiTokenMu.RLock()
+	defer apiTokenMu.RUnlock()
+	return apiToken
+}
+
+// authMiddleware checks the Bearer token.
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if apiToken == "" {
-			next.ServeHTTP(w, r)
+		token := getAuthToken()
+		if token == "" {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"detail": "auth token not initialized"})
 			return
 		}
 		// Check Authorization header
 		auth := r.Header.Get("Authorization")
-		if auth == "Bearer "+apiToken {
+		if auth == "Bearer "+token {
 			next.ServeHTTP(w, r)
 			return
 		}
 		// Only allow ?token= on SSE endpoint (EventSource cannot set custom headers).
 		if r.Method == http.MethodGet &&
 			r.URL.Path == "/api/events" &&
-			r.URL.Query().Get("token") == apiToken {
+			r.URL.Query().Get("token") == token {
 			next.ServeHTTP(w, r)
 			return
 		}

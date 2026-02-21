@@ -5,6 +5,8 @@ api-monitor
 # Runtime data
 data/
 *.db
+.gocache/
+.gomodcache/
 
 # IDE
 .vscode/
