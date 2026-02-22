@@ -140,6 +140,18 @@ function dashboard() {
             }
         },
 
+        async copyConfigQuick(event, t) {
+            await this.copyConfig(t);
+            const btn = event?.currentTarget;
+            const icon = btn?.querySelector('i');
+            if (!icon) return;
+            const oldClass = icon.className;
+            icon.className = 'ph-bold ph-check text-emerald-500';
+            setTimeout(() => {
+                icon.className = oldClass;
+            }, 1200);
+        },
+
         async submitForm() {
             if (!this.form.name || !this.form.base_url || !this.form.api_key) {
                 this.formError = 'Please fill in required fields (Name, URL, Key)';
@@ -259,6 +271,30 @@ function dashboard() {
             const rate = this.successRateValue(target);
             const rateText = Number.isInteger(rate) ? String(rate) : rate.toFixed(1).replace(/\.0$/, '');
             return `${success} / ${total} = ${rateText}%`;
+        },
+
+        channelModelCounts(target) {
+            const models = Array.isArray(target?.latest_models) ? target.latest_models : [];
+            const counts = {
+                openai: 0,
+                anthropic: 0,
+                gemini: 0,
+                other: 0,
+                total: models.length
+            };
+            for (const model of models) {
+                const protocol = String(model?.protocol || '').toLowerCase();
+                if (protocol.includes('openai')) {
+                    counts.openai += 1;
+                } else if (protocol.includes('anthropic') || protocol.includes('claude')) {
+                    counts.anthropic += 1;
+                } else if (protocol.includes('gemini') || protocol.includes('google')) {
+                    counts.gemini += 1;
+                } else {
+                    counts.other += 1;
+                }
+            }
+            return counts;
         },
 
         historyPointCount(history) {

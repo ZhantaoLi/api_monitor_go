@@ -419,7 +419,7 @@ func scanModelRow(r interface{ Scan(dest ...any) error }) (*ModelRow, error) {
 }
 
 // ---------------------------------------------------------------------------
-// CRUD 鈥?Targets
+// CRUD -- Targets
 // ---------------------------------------------------------------------------
 
 // ListTargets returns all targets ordered by id.
@@ -775,7 +775,7 @@ func (d *Database) GetModelHistoriesBatch(targetIDs []int, points int) (map[int]
 }
 
 // ---------------------------------------------------------------------------
-// CRUD 鈥?Runs
+// CRUD -- Runs
 // ---------------------------------------------------------------------------
 
 // CreateRun inserts a new "running" run.

@@ -1,112 +1,145 @@
 ﻿# API Monitor (Go)
 
-## Directory Layout (Updated)
+`API Monitor (Go)` 是 `api_monitor` 的 Go 版本实现，用于批量管理 API 渠道并周期性执行模型检测。
 
-```text
-api_monitor_go/
-├── internal/
-│   └── app/                 # Go core application package
-│       ├── run.go           # app.Start(...) startup entry
-│       ├── admin.go         # admin auth/session/settings APIs
-│       ├── db.go            # SQLite schema and data access
-│       ├── handler.go       # monitor HTTP APIs
-│       ├── monitor.go       # scheduler and probe execution
-│       ├── proxy.go         # API proxy endpoints and key checks
-│       └── sse.go           # SSE event bus and middleware
-├── web/                     # embedded frontend pages/assets
-├── data/                    # runtime database and logs
-├── main.go                  # root binary entry (embed + app.Start)
-├── Dockerfile
-└── docker-compose.yml
-```
-`API Monitor (Go)` 鏄?`api_monitor` 鐨?Go 鐗堟湰瀹炵幇锛岀敤浜庢壒閲忕鐞?API 娓犻亾骞跺懆鏈熸€ф墽琛屾ā鍨嬫祴娲汇€?
-浠撳簱鍦板潃锛歚https://github.com/ZhantaoLi/api_monitor_go`
+仓库地址：`https://github.com/ZhantaoLi/api_monitor_go`
 
-## 鍔熻兘姒傝
+## 功能概览
 
-- 娓犻亾绠＄悊锛氬鍒犳敼鏌ョ洰鏍囨笭閬擄紙`name + base_url + api_key`锛?- 瀹氭椂宸℃锛氬悗鍙版瘡鍒嗛挓鎵弿鍒版湡鐩爣骞惰Е鍙戞娴?- 骞跺彂妫€娴嬶細鐩爣鍐呭苟鍙戞娴嬫ā鍨嬶紝鐩爣闂村苟琛岃繍琛?- 缁撴灉钀藉簱锛歋QLite 淇濆瓨 `targets / runs / run_models`
-- 瀹炴椂鎺ㄩ€侊細SSE 鎺ㄩ€?`run_completed`銆乣target_updated` 浜嬩欢
-- Web 椤甸潰锛?  - 涓荤晫闈細`/`
-  - 鏃ュ織椤甸潰锛歚/viewer.html?target_id=<id>`
-  - 鍒嗘瀽椤甸潰锛歚/analysis.html?target_id=<id>`
-- 娓犻亾鎺掑簭锛氫富鐣岄潰鎷栨嫿鎺掑簭锛屾寔涔呭寲鍒?`sort_order`
-- 鏃ュ織鏌ヨ鏀寔鎸囧畾 `run_id`锛?  - `GET /api/targets/{id}/logs?run_id=<run_id>`
-- API 浠ｇ悊锛圥roxy锛夛細
+- 渠道管理：增删改查目标渠道（`name + base_url + api_key`）
+- 定时巡检：后台扫描到期目标并触发检测
+- 并发检测：目标内并发检测模型，目标间并行运行
+- 结果落库：SQLite 保存 `targets / runs / run_models`
+- 实时推送：SSE 推送 `run_completed`、`target_updated` 事件
+- Web 页面：
+  - 主界面：`/`
+  - 日志页面：`/viewer.html?target_id=<id>`
+  - 分析页面：`/analysis.html?target_id=<id>`
+  - 管理登录：`/admin/login`
+  - 管理页面：`/admin.html`
+  - 代理文档：`/docs/proxy`
+- 渠道排序：主界面拖拽排序，持久化到 `sort_order`
+- 日志查询支持指定 `run_id`：
+  - `GET /api/targets/{id}/logs?run_id=<run_id>`
+- API 代理（Proxy）：
   - `GET /v1/models`
   - `POST /v1/chat/completions`
   - `POST /v1/messages`
   - `POST /v1/responses`
   - `POST /v1beta/models/{model}:generateContent`
   - `POST /v1beta/models/{model}:streamGenerateContent`
-  - 浠ｇ悊鏂囨。椤碉細`GET /docs/proxy`
 
-## 鎶€鏈爤
+## 技术栈
 
-- 鍚庣锛欸o `net/http`锛圙o 1.22+ 璺敱璇硶锛?- 鏁版嵁搴擄細SQLite锛坄modernc.org/sqlite`锛?- 鍓嶇锛欻TML + Tailwind + Alpine.js + Chart.js
-- 瀹炴椂锛歋erver-Sent Events (SSE)
-- 閮ㄧ讲锛欴ocker Compose锛圠inux锛?
-## 鐩綍缁撴瀯
+- 后端：Go `net/http`（Go 1.22+ 路由语法）
+- 数据库：SQLite（`modernc.org/sqlite`）
+- 前端：HTML + Tailwind + Alpine.js + Chart.js
+- 实时：Server-Sent Events (SSE)
+- 部署：Docker Compose（Linux）
+
+## 目录结构
 
 ```text
 api_monitor_go/
-鈹溾攢鈹€ data/                   # 杩愯鏈熸暟鎹洰褰曪紙榛樿蹇界暐锛?鈹?  鈹溾攢鈹€ logs/               # JSONL 鏄庣粏鏃ュ織鐩綍
-鈹?  鈹斺攢鈹€ registry.db         # SQLite 涓绘暟鎹簱鏂囦欢
-鈹溾攢鈹€ web/                    # 鍓嶇椤甸潰涓庨潤鎬佽祫婧?鈹?  鈹溾攢鈹€ assets/             # 椤甸潰鑴氭湰銆佹牱寮忎笌绗笁鏂硅祫婧?鈹?  鈹?  鈹溾攢鈹€ vendor/         # 绗笁鏂瑰墠绔簱涓庡瓧浣撴枃浠?鈹?  鈹?  鈹溾攢鈹€ analysis.js     # 鍒嗘瀽椤甸€昏緫
-鈹?  鈹?  鈹溾攢鈹€ dashboard.js    # 涓荤晫闈㈤€昏緫锛堝惈鎷栨嫿鎺掑簭锛?鈹?  鈹?  鈹溾攢鈹€ log-viewer.js   # 鏃ュ織椤甸€昏緫
-鈹?  鈹?  鈹溾攢鈹€ main.js         # 閫氱敤宸ュ叿涓庨壌鏉冮€昏緫
-鈹?  鈹?  鈹溾攢鈹€ styles.css      # 鍏ㄥ眬鏍峰紡
-鈹?  鈹?  鈹斺攢鈹€ tailwind.config.js # Tailwind 杩愯鏃堕厤缃?鈹?  鈹溾攢鈹€ analysis.html       # 鍒嗘瀽椤甸潰
-鈹?  鈹溾攢鈹€ index.html          # 涓婚〉闈紙娓犻亾鎬昏锛?鈹?  鈹斺攢鈹€ log_viewer.html     # 鏃ュ織鏌ョ湅椤甸潰
-鈹溾攢鈹€ .dockerignore           # Docker 鏋勫缓蹇界暐瑙勫垯
-鈹溾攢鈹€ .gitignore              # Git 蹇界暐瑙勫垯
-鈹溾攢鈹€ db.go                   # 鏁版嵁灞傦細琛ㄧ粨鏋勩€佽縼绉汇€丆RUD
-鈹溾攢鈹€ docker-compose.yml      # Docker Compose 鍚姩閰嶇疆
-鈹溾攢鈹€ Dockerfile              # 闀滃儚鏋勫缓瀹氫箟
-鈹溾攢鈹€ go.mod                  # Go 妯″潡瀹氫箟
-鈹溾攢鈹€ go.sum                  # Go 渚濊禆鏍￠獙閿佸畾
-鈹溾攢鈹€ handler.go              # HTTP API 澶勭悊涓庡弬鏁版牎楠?鈹溾攢鈹€ LICENSE                 # MIT 璁稿彲璇?鈹溾攢鈹€ main.go                 # 绋嬪簭鍏ュ彛涓庤矾鐢辨敞鍐?鈹溾攢鈹€ monitor.go              # 璋冨害銆佹ā鍨嬫帰娴嬨€佺粨鏋滃啓鍏?鈹溾攢鈹€ README.md               # 椤圭洰璇存槑鏂囨。
-鈹斺攢鈹€ sse.go                  # SSE 浜嬩欢鎬荤嚎涓庨壌鏉冧腑闂翠欢
+├── data/                        # 运行时数据目录（建议 volume 挂载）
+│   ├── logs/                    # 按 target/run 切分的 JSONL 日志
+│   └── registry.db              # SQLite 主数据库
+├── internal/
+│   └── app/                     # 后端核心业务实现
+│       ├── admin.go             # 管理员登录会话、设置项定义与校验
+│       ├── db.go                # 表结构、迁移、CRUD、统计查询
+│       ├── handler.go           # /api/targets 等监控 API 与数据聚合
+│       ├── monitor.go           # 调度器、并发探测、日志落盘、历史汇总
+│       ├── proxy.go             # /v1/* 代理转发、proxy key 权限控制
+│       ├── run.go               # 路由注册、中间件装配、环境变量初始化
+│       └── sse.go               # SSE 事件总线与鉴权中间件
+├── web/                         # 前端页面与静态资源（embed 到二进制）
+│   ├── assets/
+│   │   ├── css/
+│   │   │   └── styles.css       # 全局样式变量与布局样式
+│   │   ├── js/
+│   │   │   ├── admin.js         # 管理面板交互逻辑
+│   │   │   ├── analysis.js      # 分析页图表与统计渲染
+│   │   │   ├── dashboard.js     # 主看板交互、拖拽排序、SSE 刷新
+│   │   │   ├── log-viewer.js    # 日志过滤、分页、run_id 查询
+│   │   │   └── main.js          # 公共工具、鉴权与主题切换
+│   │   ├── vendor/              # 三方前端依赖（离线静态文件）
+│   │   │   ├── fonts/           # 本地字体文件
+│   │   │   ├── alpine.min.js
+│   │   │   ├── chart.min.js
+│   │   │   ├── DragDropTouch.js
+│   │   │   ├── phosphor-*.css / *.woff2
+│   │   │   └── Sortable.min.js
+│   │   └── tailwind.config.js   # Tailwind 运行时配置
+│   ├── admin.html               # 管理面板主页
+│   ├── admin_login.html         # 管理面板登录页
+│   ├── analysis.html            # 渠道分析页
+│   ├── index.html               # 主监控看板
+│   ├── log_viewer.html          # 日志查看页
+│   └── proxy_docs.html          # 代理接口文档页
+├── .dockerignore                # Docker 构建忽略规则
+├── .gitignore                   # Git 忽略规则
+├── docker-compose.yml           # 容器启动配置（固定镜像 tag）
+├── Dockerfile                   # 多阶段构建定义（Go build + Alpine runtime）
+├── go.mod                       # Go 模块定义
+├── go.sum                       # Go 依赖锁定
+├── LICENSE                      # MIT 许可证
+├── main.go                      # 入口：嵌入 web 资源并启动 app.Start
+└── README.md                    # 项目说明
 ```
+## 环境变量
 
-## 鐜鍙橀噺
+- `PORT`：服务端口，默认 `8081`
+- `DATA_DIR`：数据目录，默认 `data`
+- `API_MONITOR_TOKEN`：API 鉴权 Token；为空时首次启动自动生成并持久化
+- `ADMIN_PANEL_PASSWORD`：后台管理密码；为空时首次启动自动生成并持久化
+- `DEFAULT_INTERVAL_MIN`：默认检测间隔（分钟），默认 `30`
+- `LOG_CLEANUP_ENABLED`：日志清理开关，默认 `true`
+- `LOG_MAX_SIZE_MB`：日志目录总大小上限，默认 `500`
+- `PROXY_MASTER_TOKEN`：代理主令牌（可在后台管理页面修改）
 
-- `PORT`锛氭湇鍔＄鍙ｏ紝榛樿 `8081`
-- `DATA_DIR`锛氭暟鎹洰褰曪紝榛樿 `data`
-- `API_MONITOR_TOKEN`锛欰PI 閴存潈 Token锛涗负绌哄垯棣栨鍚姩闅忔満鐢熸垚骞舵墦鍗板埌缁堢
-- `LOG_CLEANUP_ENABLED`锛氭棩蹇楁竻鐞嗗紑鍏筹紙榛樿寮€锛?- `LOG_MAX_SIZE_MB`锛氭棩蹇楃洰褰曟€诲ぇ灏忎笂闄愶紙榛樿 `500`锛?- `ADMIN_PANEL_PASSWORD`锛氬悗鍙扮鐞嗛潰鏉跨櫥褰曞瘑鐮侊紱涓虹┖鍒欓娆″惎鍔ㄩ殢鏈虹敓鎴愬苟鎵撳嵃鍒扮粓绔?- `DEFAULT_INTERVAL_MIN`锛氶粯璁ゆ笭閬撴娴嬮棿闅旓紙鍒嗛挓锛岄粯璁?`30`锛?- `PROXY_MASTER_TOKEN`锛氬彲鐩存帴璁块棶浠ｇ悊绔偣鐨勫叏灞€ token锛堝彲鍦ㄥ悗鍙伴潰鏉夸慨鏀癸級
+## Linux Docker 运行
 
+`docker-compose.yml` 默认使用固定镜像版本，可自行修改为 `latest`: `image: lming001/api-monitor-go:latest`
 
-## Linux Docker 杩愯
+启动命令：
 
 ```bash
-git clone https://github.com/ZhantaoLi/api_monitor_go
+git clone https://github.com/ZhantaoLi/api_monitor_go.git
 cd api_monitor_go
-# 鍏堟妸 docker-compose.yml 閲岀殑闀滃儚 tagname 鏀规垚瀹為檯鐗堟湰锛堝 v1.0.0锛?docker compose pull
+docker compose pull
 docker compose up -d
 ```
 
-鑻?`docker-compose.yml` 涓湭鎻愪緵 `API_MONITOR_TOKEN` / `ADMIN_PANEL_PASSWORD`锛?棣栨鍚姩浼氳嚜鍔ㄩ殢鏈虹敓鎴愶紝骞跺彲閫氳繃 `docker compose logs -f` 鍦ㄧ粓绔湅鍒般€?
-褰撳墠 `docker-compose.yml` 鏄犲皠涓?`8081:8081`锛岃闂細
+首次启动若未显式设置 `API_MONITOR_TOKEN` / `ADMIN_PANEL_PASSWORD`，服务会自动生成并在日志中打印：
+
+```bash
+docker compose logs -f
+```
+
+默认访问地址：
 
 - `http://127.0.0.1:8081/`
 
-## 閴存潈璇存槑
+## 鉴权说明
 
-- 闄?`GET /api/health` 鍜岄潤鎬侀〉闈㈠锛孉PI 闇€瑕?`Authorization: Bearer <token>`
-- SSE 绔偣棰濆鏀寔 `?token=<token>`锛圗ventSource 鏃犳硶鑷畾涔?Header锛?- 閴存潈榛樿寮€鍚細鑻ユ湭閰嶇疆 `API_MONITOR_TOKEN`锛岄娆″惎鍔ㄤ細闅忔満鐢熸垚骞跺湪缁堢鎵撳嵃
+- 除 `GET /api/health` 和静态页面外，API 需要：
+  - `Authorization: Bearer <token>`
+- SSE 端点额外支持：
+  - `GET /api/events?token=<token>`
 
-## 绠＄悊闈㈡澘
+## 管理面板
 
-- 鐧诲綍椤碉細`/admin/login`
-- 绠＄悊椤碉細`/admin.html`
-- 鏀寔閰嶇疆锛?  - `api_monitor_token`
-  - `admin_panel_password`
-  - `proxy_master_token`
-  - 鏃ュ織鑷姩娓呯悊寮€鍏充笌鏈€澶т綋绉?- `ADMIN_PANEL_PASSWORD` 榛樿寮€鍚細鑻ユ湭閰嶇疆锛岄娆″惎鍔ㄤ細闅忔満鐢熸垚骞跺湪缁堢鎵撳嵃
-- Proxy Keys 浠呭厑璁稿悗鍙扮鐞嗕細璇濇搷浣滐紙`/api/admin/login` 鐧诲綍鍚庯級
+- 登录页：`/admin/login`
+- 管理页：`/admin.html`
+- 管理 API（登录后）：
+  - `POST /api/admin/logout`
+  - `GET /api/admin/settings`
+  - `PATCH /api/admin/settings`
+  - `GET /api/admin/channels`
+  - `PATCH /api/admin/channels/{id}/advanced`
 
-
-## 涓昏鎺ュ彛
+## 主要接口
 
 - `GET /api/health`
 - `GET /api/events`
@@ -117,17 +150,19 @@ docker compose up -d
 - `PATCH /api/targets/{id}`
 - `DELETE /api/targets/{id}`
 - `POST /api/targets/{id}/run`
-- `GET /api/proxy/keys`锛堢鐞嗗憳锛?- `POST /api/proxy/keys`锛堢鐞嗗憳锛?- `DELETE /api/proxy/keys/{id}`锛堢鐞嗗憳锛?- `GET /v1/models`锛堜唬鐞嗭級
-- `POST /v1/chat/completions`锛堜唬鐞嗭級
-- `POST /v1/messages`锛堜唬鐞嗭級
-- `POST /v1/responses`锛堜唬鐞嗭級
-- `POST /v1beta/models/{model}:generateContent`锛堜唬鐞嗭級
-- `POST /v1beta/models/{model}:streamGenerateContent`锛堜唬鐞嗭級
+- `GET /api/targets/{id}/runs`
+- `GET /api/targets/{id}/logs`
+- `GET /api/proxy/keys`（管理员）
+- `POST /api/proxy/keys`（管理员）
+- `DELETE /api/proxy/keys/{id}`（管理员）
+- `GET /v1/models`（代理）
+- `POST /v1/chat/completions`（代理）
+- `POST /v1/messages`（代理）
+- `POST /v1/responses`（代理）
+- `POST /v1beta/models/{model}:generateContent`（代理）
+- `POST /v1beta/models/{model}:streamGenerateContent`（代理）
 
-## API 浠ｇ悊
-
-閮ㄧ讲鍚庡彲浣滀负 API 浠ｇ悊浣跨敤銆傞粯璁ょ鍙ｄ负 `8081`锛堝彲閫氳繃 `PORT` 淇敼锛夈€?
-璇锋眰鏃跺湪 `Authorization` 澶存惡甯︿唬鐞嗗瘑閽ワ細
+## API 代理示例
 
 ```bash
 curl http://localhost:8081/v1/models \
@@ -139,25 +174,24 @@ curl http://localhost:8081/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-`/v1/models` 鍙繑鍥炴渶杩戞娴嬩腑鈥滄垚鍔熼€氳繃鈥濈殑妯″瀷锛涜嫢涓虹┖锛岃鍏堝湪棣栭〉鎵ц涓€娆℃笭閬撴娴嬨€?
-浠ｇ悊瀵嗛挜鏀寔鎸夋笭閬?妯″瀷缁村害闄愬埗璁块棶鏉冮檺锛屽彲閫氳繃绠＄悊鍛?API 绠＄悊锛?
-- `GET /api/proxy/keys`
-- `POST /api/proxy/keys`
-- `DELETE /api/proxy/keys/{id}`
+完整文档请访问：`/docs/proxy`
 
-瀹屾暣鏂囨。璇疯闂細`/docs/proxy`
+## 数据说明
 
-## 鏁版嵁璇存槑
+- SQLite：`data/registry.db`
+- JSONL 日志：`data/logs/target_<id>_<timestamp>.jsonl`
 
-- SQLite锛歚data/registry.db`
-- JSONL 鏃ュ織锛歚data/logs/target_<id>_<timestamp>.jsonl`
+`run_models` 关键字段：
 
-`run_models` 鍏抽敭瀛楁锛?
 - `protocol`, `model`, `success`, `duration`, `status_code`
 - `error`, `content`, `route`, `endpoint`, `timestamp`, `run_id`
 
-## 娉ㄦ剰浜嬮」
+## 注意事项
 
-- `api_key` 褰撳墠鏄庢枃瀛樺偍鍦?SQLite锛岃缁撳悎纾佺洏鏉冮檺鍜岄儴缃查殧绂讳娇鐢ㄣ€?- 濡傛灉浣犲湪鍏綉閮ㄧ讲锛屽缓璁厤鍚堝弽鍚戜唬鐞嗐€両P 鐧藉悕鍗曟垨棰濆閴存潈銆?
-## 璁稿彲璇?
-鏈」鐩噰鐢?MIT License锛岃 `LICENSE`銆?
+- `api_key` 当前明文存储在 SQLite，请结合磁盘权限和部署隔离使用。
+- 生产环境建议配合反向代理、IP 白名单或额外鉴权。
+
+## 许可证
+
+本项目采用 MIT License，见 `LICENSE`。
+

@@ -131,7 +131,7 @@
               </div>
 
               <div class="flex-1 flex items-center justify-between cursor-pointer" @click="expanded = !expanded">
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-4 min-w-0">
 
                   <!-- Status Dot -->
                   <div class="relative flex items-center justify-center w-4 h-4">
@@ -146,11 +146,18 @@
                   </div>
 
                   <!-- Name & Meta -->
-                  <div>
+                  <div class="min-w-0">
                     <div class="flex items-center gap-2">
                       <h3 class="font-bold text-base text-zinc-800 dark:text-zinc-100" x-text="t.name"></h3>
                       <span x-show="!t.enabled"
                         class="px-1.5 py-0.5 rounded text-xxs bg-zinc-200 dark:bg-zinc-800 text-zinc-500 border border-zinc-300 dark:border-zinc-700">DISABLED</span>
+                      <div class="ml-1 flex items-center gap-1.5">
+                        <a x-show="t.source_url" :href="t.source_url" target="_blank" @click.stop
+                          class="p-1 rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+                          title="Open Source">
+                          <i class="ph-bold ph-link"></i>
+                        </a>
+                      </div>
                     </div>
                     <div class="text-xs text-zinc-500 font-mono mt-0.5 flex items-center gap-2 truncate">
                       <span x-text="t.base_url"></span>
@@ -165,6 +172,26 @@
 
                 <!-- Right Side: Stats & Chevron -->
                 <div class="flex items-center gap-6">
+                  <div class="hidden xl:flex items-center gap-1.5 mr-1"
+                    x-data="{ c: channelModelCounts(t) }" x-show="c.total > 0">
+                    <span x-show="c.openai > 0"
+                      class="px-2 py-1 rounded-md text-xxs font-semibold whitespace-nowrap bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-400/20">
+                      OpenAI <span x-text="c.openai"></span>
+                    </span>
+                    <span x-show="c.anthropic > 0"
+                      class="px-2 py-1 rounded-md text-xxs font-semibold whitespace-nowrap bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300 border border-amber-200/70 dark:border-amber-400/20">
+                      Claude <span x-text="c.anthropic"></span>
+                    </span>
+                    <span x-show="c.gemini > 0"
+                      class="px-2 py-1 rounded-md text-xxs font-semibold whitespace-nowrap bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300 border border-sky-200/70 dark:border-sky-400/20">
+                      Gemini <span x-text="c.gemini"></span>
+                    </span>
+                    <span
+                      class="px-2 py-1 rounded-md text-xxs font-semibold whitespace-nowrap bg-zinc-100 text-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
+                      Total <span x-text="c.total"></span>
+                    </span>
+                  </div>
+
                   <!-- Health Bar -->
                   <div class="flex flex-col items-end gap-1 w-24 sm:w-32 hidden sm:flex"
                     x-show="t.enabled && t.last_total > 0">
@@ -343,7 +370,7 @@
               <option value="all">All Protocols</option>
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
-              <option value="gemini">Gemini</option>
+              <option value="gemini">Google</option>
             </select>
           </div>
 

@@ -225,7 +225,7 @@ func attachModelHistory(models []ModelStatus, historyByModel map[string][]ModelH
 	}
 }
 
-// Health 鈥?GET /api/health (no auth)
+// Health -- GET /api/health (no auth)
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
@@ -233,7 +233,7 @@ func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Dashboard 鈥?GET /api/dashboard
+// Dashboard -- GET /api/dashboard
 func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	targets, err := h.db.ListTargets()
 	if err != nil {
@@ -267,7 +267,7 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListTargets 鈥?GET /api/targets
+// ListTargets -- GET /api/targets
 func (h *Handlers) ListTargets(w http.ResponseWriter, r *http.Request) {
 	targets, err := h.db.ListTargets()
 	if err != nil {
@@ -305,7 +305,7 @@ func (h *Handlers) ListTargets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-// GetTarget 鈥?GET /api/targets/{id}
+// GetTarget -- GET /api/targets/{id}
 func (h *Handlers) GetTarget(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
 	if !ok {
@@ -324,7 +324,7 @@ func (h *Handlers) GetTarget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target)})
 }
 
-// CreateTarget 鈥?POST /api/targets
+// CreateTarget -- POST /api/targets
 func (h *Handlers) CreateTarget(w http.ResponseWriter, r *http.Request) {
 	var payload map[string]any
 	if err := readJSON(r, &payload); err != nil {
@@ -352,7 +352,7 @@ func (h *Handlers) CreateTarget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target)})
 }
 
-// PatchTarget 鈥?PATCH /api/targets/{id}
+// PatchTarget -- PATCH /api/targets/{id}
 func (h *Handlers) PatchTarget(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
 	if !ok {
@@ -391,7 +391,7 @@ func (h *Handlers) PatchTarget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(updated)})
 }
 
-// DeleteTarget 鈥?DELETE /api/targets/{id}
+// DeleteTarget -- DELETE /api/targets/{id}
 func (h *Handlers) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
 	if !ok {
@@ -419,7 +419,7 @@ func (h *Handlers) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// RunTarget 鈥?POST /api/targets/{id}/run
+// RunTarget -- POST /api/targets/{id}/run
 func (h *Handlers) RunTarget(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
 	if !ok {
@@ -441,7 +441,7 @@ func (h *Handlers) RunTarget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": msg})
 }
 
-// ListRuns 鈥?GET /api/targets/{id}/runs
+// ListRuns -- GET /api/targets/{id}/runs
 func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
 	if !ok {
@@ -469,7 +469,7 @@ func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetLogs 鈥?GET /api/targets/{id}/logs
+// GetLogs -- GET /api/targets/{id}/logs
 func (h *Handlers) GetLogs(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
 	if !ok {
