@@ -188,12 +188,12 @@ function updateSortIcons() {
     if (sortState.key === 'model') targetTh = ths[4];
     if (sortState.key === 'latency') targetTh = ths[5];
 
-    if (targetTh) {
+        if (targetTh) {
         const icon = targetTh.querySelector('i');
         if (icon) {
             icon.className = sortState.direction === 'asc'
-                ? 'ph-bold ph-caret-up text-neon-blue opacity-100'
-                : 'ph-bold ph-caret-down text-neon-blue opacity-100';
+                ? 'ph-bold ph-caret-up analysis-latency-soft opacity-100'
+                : 'ph-bold ph-caret-down analysis-latency-soft opacity-100';
         }
     }
 }
@@ -269,7 +269,7 @@ function updateCharts() {
             datasets: [{
                 label: 'Avg Latency (ms)',
                 data: dataPoints,
-                backgroundColor: 'rgba(0, 243, 255, 0.6)',
+                backgroundColor: 'rgba(43, 152, 232, 0.6)',
                 borderColor: '#00f3ff',
                 borderWidth: 1,
                 borderRadius: 6
@@ -365,7 +365,7 @@ function updateCharts() {
                 label: 'Latency',
                 data: scatterData,
                 backgroundColor: (ctx) => 'rgba(0, 243, 255, 0.1)',
-                borderColor: 'rgba(0, 243, 255, 0.5)',
+                borderColor: 'rgba(43, 152, 232, 0.6)',
                 borderWidth: 1,
                 showLine: true,
                 pointRadius: 4,
@@ -464,7 +464,7 @@ function updateAnalytics() {
                             <span class="text-xs text-zinc-600 dark:text-zinc-400">${rate}%</span>
                         </div>
                     </td>
-                    <td class="p-3 font-mono text-neon-blue text-xs">${avg}ms</td>
+                    <td class="p-3 font-mono analysis-latency-strong text-xs">${avg}ms</td>
                     <td class="p-3 font-mono text-purple-600 dark:text-purple-400 text-xs">${p95}ms</td>
                     <td class="p-3 text-red-500 dark:text-red-400 font-bold text-xs">${s.errors > 0 ? s.errors : '-'}</td>
                 `;
@@ -535,7 +535,7 @@ function renderTable() {
                     <td class="p-4">
                         <div class="text-xs text-zinc-600 dark:text-zinc-400 truncate max-w-[150px]" title="${log.model}">${log.model}</div>
                         </td>
-                    <td class="p-4 font-mono text-neon-blue">${duration}</td>
+                    <td class="p-4 font-mono analysis-latency-strong">${duration}</td>
                     <td class="p-4">${streamBadge}</td>
                     <td class="p-4 text-right">
                         <button onclick="openModal(${idDisplay})" class="p-2 rounded hover:bg-zinc-200/50 dark:hover:bg-white/10 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">

@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"database/sql"
@@ -419,7 +419,7 @@ func scanModelRow(r interface{ Scan(dest ...any) error }) (*ModelRow, error) {
 }
 
 // ---------------------------------------------------------------------------
-// CRUD – Targets
+// CRUD 鈥?Targets
 // ---------------------------------------------------------------------------
 
 // ListTargets returns all targets ordered by id.
@@ -775,7 +775,7 @@ func (d *Database) GetModelHistoriesBatch(targetIDs []int, points int) (map[int]
 }
 
 // ---------------------------------------------------------------------------
-// CRUD – Runs
+// CRUD 鈥?Runs
 // ---------------------------------------------------------------------------
 
 // CreateRun inserts a new "running" run.

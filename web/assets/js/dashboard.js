@@ -242,6 +242,25 @@ function dashboard() {
             return 'text-red-500';
         },
 
+        successRateValue(target) {
+            if (!target) return 0;
+            if (Number.isFinite(target.last_success_rate)) {
+                return Math.max(0, Math.min(100, Number(target.last_success_rate)));
+            }
+            const total = Number(target.last_total || 0);
+            const success = Number(target.last_success || 0);
+            if (total <= 0) return 0;
+            return Math.max(0, Math.min(100, (success * 100) / total));
+        },
+
+        successSummaryText(target) {
+            const total = Number(target?.last_total || 0);
+            const success = Number(target?.last_success || 0);
+            const rate = this.successRateValue(target);
+            const rateText = Number.isInteger(rate) ? String(rate) : rate.toFixed(1).replace(/\.0$/, '');
+            return `${success} / ${total} = ${rateText}%`;
+        },
+
         historyPointCount(history) {
             return Array.isArray(history) ? history.length : 0;
         },
