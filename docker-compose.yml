@@ -1,6 +1,6 @@
 services:
   api-monitor-go:
-    image: lming001/api-monitor-go:v1.0.0
+    image: lming001/api-monitor-go:v1.1.0
     pull_policy: always
     platform: linux/amd64
     container_name: api-monitor-go
@@ -10,6 +10,9 @@ services:
     environment:
       - LOG_CLEANUP_ENABLED=1
       - LOG_MAX_SIZE_MB=128
+      # Optional knobs for low-resource servers (default values: 3 / 2)
+      # - MONITOR_DETECT_CONCURRENCY=1
+      # - MONITOR_MAX_PARALLEL_TARGETS=1
       - API_MONITOR_TOKEN=${API_MONITOR_TOKEN:-}
       - ADMIN_PANEL_PASSWORD=${ADMIN_PANEL_PASSWORD:-}
     volumes:

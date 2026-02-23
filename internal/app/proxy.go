@@ -13,7 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"path"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -148,7 +148,7 @@ func normalizeProxyAllowedModels(models []string) []string {
 	seen := make(map[string]struct{}, len(models))
 	out := make([]string, 0, len(models))
 	for _, m := range models {
-		s := strings.ToLower(strings.TrimSpace(m))
+		s := strings.TrimSpace(m)
 		if s == "" {
 			continue
 		}
@@ -333,6 +333,12 @@ func (h *Handlers) CreateProxyKey(w http.ResponseWriter, r *http.Request) {
 
 	req.AllowedTargetIDs = normalizeProxyAllowedTargets(req.AllowedTargetIDs)
 	req.AllowedModels = normalizeProxyAllowedModels(req.AllowedModels)
+	for _, model := range req.AllowedModels {
+		if _, _, ok := parseProxyModelID(model); !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "allowed_models must use channel/model format"})
+			return
+		}
+	}
 
 	for _, id := range req.AllowedTargetIDs {
 		t, err := h.db.GetTarget(id)
@@ -425,23 +431,12 @@ func modelAllowed(allowed []string, model string) bool {
 	if len(allowed) == 0 {
 		return true
 	}
-	model = strings.ToLower(strings.TrimSpace(model))
+	model = strings.TrimSpace(model)
 	if model == "" {
 		return false
 	}
-	for _, rule := range allowed {
-		rule = strings.ToLower(strings.TrimSpace(rule))
-		if rule == "" {
-			continue
-		}
-		if strings.ContainsAny(rule, "*?[]") {
-			matched, _ := path.Match(rule, model)
-			if matched {
-				return true
-			}
-			continue
-		}
-		if rule == model {
+	for _, item := range allowed {
+		if strings.TrimSpace(item) == model {
 			return true
 		}
 	}
@@ -469,7 +464,48 @@ func filterProxyCandidates(targets []Target, allowedTargetIDs []int) []Target {
 	return out
 }
 
-func (h *Handlers) resolveProxyTarget(key *ProxyKey, model string, requestTargetID *int) (*Target, error) {
+func composeProxyModelID(channelName, dbModel string) string {
+	channelName = strings.TrimSpace(channelName)
+	dbModel = strings.TrimSpace(dbModel)
+	if channelName == "" || dbModel == "" {
+		return ""
+	}
+	prefix := channelName + "/"
+	if strings.HasPrefix(dbModel, prefix) {
+		return dbModel
+	}
+	return prefix + dbModel
+}
+
+func parseProxyModelID(model string) (channelName string, dbModel string, ok bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "", "", false
+	}
+	parts := strings.SplitN(model, "/", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	channelName = strings.TrimSpace(parts[0])
+	dbModel = strings.TrimSpace(parts[1])
+	if channelName == "" || dbModel == "" {
+		return "", "", false
+	}
+	return channelName, dbModel, true
+}
+
+type proxyResolvedModel struct {
+	RequestedModel string
+	Target         Target
+	UpstreamModel  string
+}
+
+func (h *Handlers) resolveProxyModel(key *ProxyKey, requestedModel string, requestTargetID *int) (*proxyResolvedModel, error) {
+	channelName, dbModel, ok := parseProxyModelID(requestedModel)
+	if !ok {
+		return nil, fmt.Errorf("model must be in channel/model format")
+	}
+
 	targets, err := h.db.ListTargets()
 	if err != nil {
 		return nil, err
@@ -478,48 +514,71 @@ func (h *Handlers) resolveProxyTarget(key *ProxyKey, model string, requestTarget
 	if len(candidates) == 0 {
 		return nil, errProxyNoTarget
 	}
+	if !modelAllowed(key.AllowedModels, requestedModel) {
+		return nil, errProxyModelNotAllowed
+	}
 
 	if requestTargetID != nil {
+		found := false
 		for i := range candidates {
 			if candidates[i].ID == *requestTargetID {
-				return &candidates[i], nil
+				found = true
+				break
 			}
 		}
-		for i := range targets {
-			if targets[i].ID == *requestTargetID {
-				return nil, errProxyTargetNotAllowed
-			}
-		}
-		return nil, errProxyTargetNotFound
-	}
-
-	if strings.TrimSpace(model) != "" {
-		ids := make([]int, 0, len(candidates))
-		for _, c := range candidates {
-			ids = append(ids, c.ID)
-		}
-		statusByTarget, err := h.db.GetLatestModelStatusesBatch(ids)
-		if err == nil {
-			for i := range candidates {
-				statuses := statusByTarget[candidates[i].ID]
-				for _, ms := range statuses {
-					if strings.EqualFold(ms.Model, model) && ms.Success {
-						return &candidates[i], nil
-					}
+		if !found {
+			for i := range targets {
+				if targets[i].ID == *requestTargetID {
+					return nil, errProxyTargetNotAllowed
 				}
 			}
-			for i := range candidates {
-				statuses := statusByTarget[candidates[i].ID]
-				for _, ms := range statuses {
-					if strings.EqualFold(ms.Model, model) {
-						return &candidates[i], nil
-					}
-				}
-			}
+			return nil, errProxyTargetNotFound
 		}
 	}
 
-	return &candidates[0], nil
+	channelCandidates := make([]Target, 0, len(candidates))
+	for _, c := range candidates {
+		if c.Name != channelName {
+			continue
+		}
+		if requestTargetID != nil && c.ID != *requestTargetID {
+			continue
+		}
+		channelCandidates = append(channelCandidates, c)
+	}
+	if len(channelCandidates) == 0 {
+		for _, t := range targets {
+			if t.Name != channelName {
+				continue
+			}
+			if requestTargetID != nil && t.ID != *requestTargetID {
+				continue
+			}
+			return nil, errProxyTargetNotAllowed
+		}
+		return nil, fmt.Errorf("model not found or not successful in latest run: %s", requestedModel)
+	}
+
+	ids := make([]int, 0, len(channelCandidates))
+	for _, c := range channelCandidates {
+		ids = append(ids, c.ID)
+	}
+	statusByTarget, err := h.db.GetLatestModelStatusesBatch(ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range channelCandidates {
+		for _, ms := range statusByTarget[c.ID] {
+			if ms.Success && ms.Model == dbModel {
+				return &proxyResolvedModel{
+					RequestedModel: requestedModel,
+					Target:         c,
+					UpstreamModel:  dbModel,
+				}, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("model not found or not successful in latest run: %s", requestedModel)
 }
 
 func hopByHopHeader(name string) bool {
@@ -564,6 +623,46 @@ func parseGeminiModelFromPath(p string) (string, bool) {
 		return strings.TrimSpace(model), model != ""
 	}
 	return "", false
+}
+
+func rewriteGeminiPathWithUpstreamModel(proxyPath, upstreamModel string) (string, error) {
+	const prefix = "/v1beta/models/"
+	if !strings.HasPrefix(proxyPath, prefix) {
+		return "", fmt.Errorf("invalid gemini path")
+	}
+
+	rest := strings.TrimPrefix(proxyPath, prefix)
+	var suffix string
+	switch {
+	case strings.HasSuffix(rest, ":generateContent"):
+		suffix = ":generateContent"
+	case strings.HasSuffix(rest, ":streamGenerateContent"):
+		suffix = ":streamGenerateContent"
+	default:
+		return "", fmt.Errorf("invalid gemini path")
+	}
+	upstreamModel = strings.TrimSpace(upstreamModel)
+	if upstreamModel == "" {
+		return "", fmt.Errorf("empty upstream model")
+	}
+	parts := strings.Split(upstreamModel, "/")
+	for i := range parts {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	return prefix + strings.Join(parts, "/") + suffix, nil
+}
+
+func rewriteBodyModel(body []byte, upstreamModel string) ([]byte, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("invalid JSON body")
+	}
+	payload["model"] = upstreamModel
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode JSON body")
+	}
+	return out, nil
 }
 
 func (h *Handlers) authenticateProxyRequest(r *http.Request) (*ProxyKey, error) {
@@ -648,8 +747,12 @@ func (h *Handlers) ProxyModels(w http.ResponseWriter, r *http.Request) {
 	seen := make(map[string]struct{})
 	for _, t := range candidates {
 		for _, ms := range statusByTarget[t.ID] {
-			modelID := strings.TrimSpace(ms.Model)
-			if modelID == "" || !ms.Success {
+			dbModel := strings.TrimSpace(ms.Model)
+			if dbModel == "" || !ms.Success {
+				continue
+			}
+			modelID := composeProxyModelID(t.Name, dbModel)
+			if modelID == "" {
 				continue
 			}
 			if !modelAllowed(key.AllowedModels, modelID) {
@@ -695,8 +798,13 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 	if model == "" {
 		model = extractModelFromPayload(body)
 	}
-	if len(key.AllowedModels) > 0 && strings.TrimSpace(model) == "" {
+	model = strings.TrimSpace(model)
+	if model == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": errProxyMissingModel.Error()})
+		return
+	}
+	if _, _, ok := parseProxyModelID(model); !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "model must be in channel/model format and exactly match latest successful detected model"})
 		return
 	}
 	if !modelAllowed(key.AllowedModels, model) {
@@ -709,7 +817,7 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
 		return
 	}
-	target, err := h.resolveProxyTarget(key, model, reqTargetID)
+	resolved, err := h.resolveProxyModel(key, model, reqTargetID)
 	if err != nil {
 		status := http.StatusBadGateway
 		switch err {
@@ -719,18 +827,41 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 			status = http.StatusForbidden
 		case errProxyTargetNotFound:
 			status = http.StatusNotFound
+		default:
+			if strings.Contains(err.Error(), "model") {
+				status = http.StatusBadRequest
+			}
 		}
 		writeJSON(w, status, map[string]any{"detail": err.Error()})
 		return
 	}
 
+	upstreamPath := r.URL.Path
+	upstreamBody := body
+	if strings.HasPrefix(r.URL.Path, "/v1beta/models/") {
+		rewrittenPath, rewriteErr := rewriteGeminiPathWithUpstreamModel(r.URL.Path, resolved.UpstreamModel)
+		if rewriteErr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": rewriteErr.Error()})
+			return
+		}
+		upstreamPath = rewrittenPath
+	} else {
+		rewrittenBody, rewriteErr := rewriteBodyModel(body, resolved.UpstreamModel)
+		if rewriteErr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": rewriteErr.Error()})
+			return
+		}
+		upstreamBody = rewrittenBody
+	}
+
+	target := resolved.Target
 	base := strings.TrimRight(normalizeBaseURL(target.BaseURL), "/")
-	upstreamURL := base + r.URL.Path
+	upstreamURL := base + upstreamPath
 	if r.URL.RawQuery != "" {
 		upstreamURL += "?" + r.URL.RawQuery
 	}
 
-	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(body))
+	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"detail": "failed to create upstream request"})
 		return
@@ -767,6 +898,7 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 
 	copyProxyResponseHeaders(w.Header(), upResp.Header)
 	w.Header().Set("X-Proxy-Target-Id", strconv.Itoa(target.ID))
+	w.Header().Set("X-Proxy-Upstream-Model", resolved.UpstreamModel)
 	w.WriteHeader(upResp.StatusCode)
 	if _, err := io.Copy(w, upResp.Body); err != nil {
 		log.Printf("[proxy] copy response failed: %v", err)

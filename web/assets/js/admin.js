@@ -111,6 +111,8 @@
         item: null,
         channels: [],
         editingChannelId: null,
+        resourceTimer: null,
+        lastResourceSample: null,
 
         bindThemeToggle() {
             const btn = dom.byId('theme-toggle-btn');
@@ -203,6 +205,7 @@
             const logoutBtn = dom.byId('logout-btn');
             const randomProxyTokenBtn = dom.byId('random-proxy-token-btn');
             const refreshChannelsBtn = dom.byId('refresh-channels-btn');
+            const resourceRefreshBtn = dom.byId('resource-refresh-btn');
 
             if (saveGeneralBtn) {
                 saveGeneralBtn.addEventListener('click', () => this.saveGeneral());
@@ -216,6 +219,9 @@
             if (refreshChannelsBtn) {
                 refreshChannelsBtn.addEventListener('click', () => this.loadChannels());
             }
+            if (resourceRefreshBtn) {
+                resourceRefreshBtn.addEventListener('click', () => this.loadResources(true));
+            }
             if (logoutBtn) {
                 logoutBtn.addEventListener('click', async () => {
                     try {
@@ -228,6 +234,22 @@
             }
 
             await Promise.all([this.loadSettings(), this.loadChannels()]);
+            this.startResourcePolling();
+            window.addEventListener('beforeunload', () => this.stopResourcePolling(), { once: true });
+        },
+
+        startResourcePolling() {
+            this.stopResourcePolling();
+            this.loadResources(false);
+            this.resourceTimer = window.setInterval(() => {
+                this.loadResources(false);
+            }, 5000);
+        },
+
+        stopResourcePolling() {
+            if (!this.resourceTimer) return;
+            window.clearInterval(this.resourceTimer);
+            this.resourceTimer = null;
         },
 
         setBusy(buttonIds, busy, busyTextMap = {}) {
@@ -241,6 +263,156 @@
                 } else if (!busy && btn.dataset.oldText) {
                     btn.textContent = btn.dataset.oldText;
                     delete btn.dataset.oldText;
+                }
+            }
+        },
+
+        formatBytes(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n) || n < 0) return '--';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let idx = 0;
+            let v = n;
+            while (v >= 1024 && idx < units.length - 1) {
+                v /= 1024;
+                idx += 1;
+            }
+            if (idx === 0) return `${Math.round(v)} ${units[idx]}`;
+            return `${v.toFixed(2)} ${units[idx]}`;
+        },
+
+        formatPercent(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n) || n < 0) return '--';
+            return `${n.toFixed(1)}%`;
+        },
+
+        formatCores(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n) || n <= 0) return '--';
+            return `${n.toFixed(2)} cores`;
+        },
+
+        setResourceText(id, text) {
+            const el = dom.byId(id);
+            if (!el) return;
+            el.textContent = text;
+        },
+
+        setResourceDetail(message) {
+            const box = dom.byId('resource-detail');
+            if (!box) return;
+            if (!message) {
+                box.classList.add('hidden');
+                box.textContent = '';
+                return;
+            }
+            box.classList.remove('hidden');
+            box.textContent = message;
+        },
+
+        setResourceUnavailable(detail) {
+            this.setResourceText('resource-cpu-usage', '--');
+            this.setResourceText('resource-cpu-limit', '--');
+            this.setResourceText('resource-memory-usage', '--');
+            this.setResourceText('resource-memory-rate', '--');
+            this.setResourceText('resource-status', 'Unavailable');
+            this.lastResourceSample = null;
+            this.setResourceDetail(detail || 'Container cgroup metrics unavailable');
+        },
+
+        normalizeResourceSample(payload) {
+            if (!payload || typeof payload !== 'object') return null;
+            const sampleTimeMs = Number(payload.sample_time_ms);
+            const container = payload.container || {};
+            return {
+                sampleTimeMs,
+                available: !!container.available,
+                cgroupVersion: Number(container.cgroup_version || 0),
+                cpuUsageSecondsTotal: Number(container.cpu_usage_seconds_total),
+                cpuLimitCores: container.cpu_limit_cores == null ? null : Number(container.cpu_limit_cores),
+                memoryUsageBytes: Number(container.memory_usage_bytes),
+                memoryLimitBytes: container.memory_limit_bytes == null ? null : Number(container.memory_limit_bytes),
+                detail: String(container.detail || '').trim()
+            };
+        },
+
+        computeCPUPercent(curr) {
+            const prev = this.lastResourceSample;
+            if (!prev) return null;
+            const deltaCPU = curr.cpuUsageSecondsTotal - prev.cpuUsageSecondsTotal;
+            const deltaWall = (curr.sampleTimeMs - prev.sampleTimeMs) / 1000;
+            if (!Number.isFinite(deltaCPU) || !Number.isFinite(deltaWall) || deltaCPU < 0 || deltaWall <= 0) {
+                return null;
+            }
+            const limit = Number(curr.cpuLimitCores);
+            const denominator = deltaWall * (Number.isFinite(limit) && limit > 0 ? limit : 1);
+            if (!Number.isFinite(denominator) || denominator <= 0) {
+                return null;
+            }
+            const percent = (deltaCPU / denominator) * 100;
+            if (!Number.isFinite(percent) || percent < 0) {
+                return null;
+            }
+            return percent;
+        },
+
+        applyResourceSnapshot(payload) {
+            const sample = this.normalizeResourceSample(payload);
+            if (!sample || !Number.isFinite(sample.sampleTimeMs)) {
+                this.setResourceUnavailable('Invalid resource payload');
+                return;
+            }
+
+            const sampleTime = new Date(sample.sampleTimeMs);
+            if (Number.isNaN(sampleTime.getTime())) {
+                this.setResourceText('resource-sample-time', '--');
+            } else {
+                this.setResourceText('resource-sample-time', sampleTime.toLocaleString());
+            }
+
+            if (!sample.available) {
+                this.setResourceUnavailable(sample.detail || 'Container cgroup metrics unavailable');
+                return;
+            }
+
+            const cpuPercent = this.computeCPUPercent(sample);
+            this.setResourceText('resource-cpu-usage', this.formatPercent(cpuPercent));
+            this.setResourceText('resource-cpu-limit', this.formatCores(sample.cpuLimitCores));
+
+            const memUsedText = this.formatBytes(sample.memoryUsageBytes);
+            const hasMemLimit = Number.isFinite(sample.memoryLimitBytes) && sample.memoryLimitBytes > 0;
+            const memLimitText = hasMemLimit ? this.formatBytes(sample.memoryLimitBytes) : '--';
+            this.setResourceText('resource-memory-usage', `${memUsedText} / ${memLimitText}`);
+
+            let memRate = null;
+            if (hasMemLimit) {
+                memRate = (sample.memoryUsageBytes / sample.memoryLimitBytes) * 100;
+            }
+            this.setResourceText('resource-memory-rate', this.formatPercent(memRate));
+
+            const statusText = cpuPercent == null ? 'Collecting...' : `Live (cgroup v${sample.cgroupVersion || '?'})`;
+            this.setResourceText('resource-status', statusText);
+            this.setResourceDetail('');
+            this.lastResourceSample = sample;
+        },
+
+        async loadResources(manual) {
+            const buttonId = 'resource-refresh-btn';
+            if (manual) {
+                this.setBusy([buttonId], true, { [buttonId]: 'Loading...' });
+            }
+            try {
+                const data = await apiJSON('/api/admin/resources');
+                this.applyResourceSnapshot(data || null);
+            } catch (err) {
+                this.setResourceUnavailable(err.message || 'Failed to load resources');
+                if (manual) {
+                    showAlert('error', err.message || 'Failed to load resources');
+                }
+            } finally {
+                if (manual) {
+                    this.setBusy([buttonId], false);
                 }
             }
         },

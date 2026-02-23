@@ -95,6 +95,8 @@ func Start(webFS fs.FS) {
 	logCleanupEnabled := envBool("LOG_CLEANUP_ENABLED", true)
 	logMaxSizeMB := envInt("LOG_MAX_SIZE_MB", 500)
 	defaultIntervalMin := envInt("DEFAULT_INTERVAL_MIN", 30)
+	monitorDetectConcurrency := envInt("MONITOR_DETECT_CONCURRENCY", 3)
+	monitorMaxParallelTargets := envInt("MONITOR_MAX_PARALLEL_TARGETS", 2)
 	if defaultIntervalMin < 1 || defaultIntervalMin > 1440 {
 		defaultIntervalMin = 30
 	}
@@ -161,8 +163,8 @@ func Start(webFS fs.FS) {
 	monitor := NewMonitorService(MonitorConfig{
 		DB:                 db,
 		LogDir:             logDir,
-		DetectConcurrency:  3,
-		MaxParallelTargets: 2,
+		DetectConcurrency:  monitorDetectConcurrency,
+		MaxParallelTargets: monitorMaxParallelTargets,
 		EnableLogCleanup:   logCleanupEnabled,
 		LogMaxBytes:        int64(logMaxSizeMB) * 1024 * 1024,
 	})
@@ -294,6 +296,7 @@ func Start(webFS fs.FS) {
 	mux.Handle("POST /api/admin/logout", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminLogout)))
 	mux.Handle("GET /api/admin/settings", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminGetSettings)))
 	mux.Handle("PATCH /api/admin/settings", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminPatchSettings)))
+	mux.Handle("GET /api/admin/resources", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminGetResources)))
 	mux.Handle("GET /api/admin/channels", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminListChannels)))
 	mux.Handle("PATCH /api/admin/channels/{id}/advanced", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminPatchChannelAdvanced)))
 

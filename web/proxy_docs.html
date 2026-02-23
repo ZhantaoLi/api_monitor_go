@@ -56,11 +56,9 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                                <code>GET /v1/models</code>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700"><code>GET /v1/models</code>
                             </td>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">OpenAI-compatible Models
-                                API</td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">OpenAI Models API</td>
                         </tr>
                         <tr>
                             <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
@@ -70,18 +68,15 @@
                                 API</td>
                         </tr>
                         <tr>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                                <code>POST /v1/messages</code>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700"><code>POST /v1/messages</code>
                             </td>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">Anthropic Claude
-                                Messages API</td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">Anthropic Messages API
+                            </td>
                         </tr>
                         <tr>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                                <code>POST /v1/responses</code>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700"><code>POST /v1/responses</code>
                             </td>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">OpenAI Responses API
-                            </td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">OpenAI Responses API</td>
                         </tr>
                         <tr>
                             <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
@@ -97,27 +92,31 @@
                 </table>
             </div>
 
-            <h2 class="text-lg font-bold mb-3">调用方式</h2>
-            <p class="text-zinc-600 dark:text-zinc-400 mb-2">请求头中携带代理密钥：</p>
+            <h2 class="text-lg font-bold mb-3">核心约束（严格）</h2>
+            <ul class="list-disc pl-6 text-zinc-700 dark:text-zinc-300 mb-6 space-y-1">
+                <li>模型名称必须使用 <code>&lt;channel&gt;/&lt;model&gt;</code> 格式，例如 <code>&lt;channel&gt;/&lt;model&gt;</code>。</li>
+                <li>模型名称必须与数据库中“最新检测结果里的成功模型”严格区分大小写并完全匹配。</li>
+                <li><code>/v1/models</code> 仅返回检测成功的模型，并且 ID 格式统一为 <code>channel/model</code>。</li>
+                <li>流式请求会透明转发，保持上游原始 SSE 格式，不改写事件内容。</li>
+            </ul>
+
+            <h2 class="text-lg font-bold mb-3">调用示例</h2>
             <pre class="rounded-xl bg-zinc-900 text-zinc-100 p-4 text-xs md:text-sm overflow-x-auto mb-3"><code>curl http://localhost:8081/v1/models \
   -H "Authorization: Bearer sk-your-proxy-key"</code></pre>
             <pre class="rounded-xl bg-zinc-900 text-zinc-100 p-4 text-xs md:text-sm overflow-x-auto mb-4"><code>curl http://localhost:8081/v1/chat/completions \
   -H "Authorization: Bearer sk-your-proxy-key" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'</code></pre>
-            <p class="text-zinc-600 dark:text-zinc-400 mb-6">
-                <code>/v1/models</code> 只返回最近检测中“成功通过”的模型；若为空，请先在主页执行一次渠道检测。
-            </p>
+  -d '{"model":"&lt;channel&gt;/&lt;model&gt;","messages":[{"role":"user","content":"Hello"}]}'</code></pre>
 
             <h2 class="text-lg font-bold mb-3">可选路由控制</h2>
             <ul class="list-disc pl-6 text-zinc-700 dark:text-zinc-300 mb-6 space-y-1">
-                <li><code>X-Target-Id: &lt;id&gt;</code>：指定转发到某个渠道（需在代理密钥允许范围内）。</li>
+                <li>请求头 <code>X-Target-Id: &lt;id&gt;</code>：指定转发到某个渠道（需在 key 权限内）。</li>
                 <li>或查询参数 <code>?target_id=&lt;id&gt;</code>。</li>
             </ul>
 
-            <h2 class="text-lg font-bold mb-3">代理密钥管理（管理员 API）</h2>
+            <h2 class="text-lg font-bold mb-3">代理 Key 管理（管理员 API）</h2>
             <p class="text-zinc-600 dark:text-zinc-400 mb-2">
-                以下端点仅允许后台管理会话访问（先在 <code>/admin/login</code> 登录）：
+                需先登录 <code>/admin/login</code> 才能访问：
             </p>
             <div class="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-700 mb-4">
                 <table class="w-full text-sm">
@@ -129,26 +128,26 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                                <code>GET /api/proxy/keys</code></td>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">列出代理密钥</td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700"><code>GET /api/proxy/keys</code>
+                            </td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">查看代理 Key 列表</td>
                         </tr>
                         <tr>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                                <code>POST /api/proxy/keys</code></td>
-                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">创建代理密钥（可限制渠道/模型）</td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700"><code>POST /api/proxy/keys</code>
+                            </td>
+                            <td class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">创建代理 Key（可限制渠道/模型）</td>
                         </tr>
                         <tr>
                             <td class="px-3 py-2"><code>DELETE /api/proxy/keys/{id}</code></td>
-                            <td class="px-3 py-2">撤销代理密钥</td>
+                            <td class="px-3 py-2">撤销代理 Key</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
             <div class="text-xs text-zinc-500 dark:text-zinc-400 border-t border-zinc-200 dark:border-zinc-800 pt-4">
-                提示：如果你使用 Cherry Studio 等客户端，建议先调用一次 <code>/v1/models</code>
-                确认模型已出现在代理可见列表中。
+                提示：如果你使用 Cherry Studio 等客户端，建议先请求一次 <code>/v1/models</code>，
+                仅从返回列表中选择模型（即 <code>channel/model</code>）。
             </div>
         </section>
     </main>

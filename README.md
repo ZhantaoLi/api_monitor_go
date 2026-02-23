@@ -97,6 +97,8 @@ api_monitor_go/
 - `LOG_CLEANUP_ENABLED`：日志清理开关，默认 `true`
 - `LOG_MAX_SIZE_MB`：日志目录总大小上限，默认 `500`
 - `PROXY_MASTER_TOKEN`：代理主令牌（可在后台管理页面修改）
+- `MONITOR_DETECT_CONCURRENCY`：单次检测中模型探测并发数，默认 `3`
+- `MONITOR_MAX_PARALLEL_TARGETS`：同时运行的渠道数上限，默认 `2`
 
 ## Linux Docker 运行
 
@@ -136,6 +138,7 @@ docker compose logs -f
   - `POST /api/admin/logout`
   - `GET /api/admin/settings`
   - `PATCH /api/admin/settings`
+  - `GET /api/admin/resources`
   - `GET /api/admin/channels`
   - `PATCH /api/admin/channels/{id}/advanced`
 
@@ -171,7 +174,7 @@ curl http://localhost:8081/v1/models \
 curl http://localhost:8081/v1/chat/completions \
   -H "Authorization: Bearer sk-your-proxy-key" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
+  -d '{"model":"<channel>/<model>","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
 完整文档请访问：`/docs/proxy`
@@ -195,3 +198,7 @@ curl http://localhost:8081/v1/chat/completions \
 
 本项目采用 MIT License，见 `LICENSE`。
 
+## 致谢
+
+ - https://github.com/BingZi-233/check-cx
+ - https://github.com/chxcodepro/model-check
