@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,7 +73,9 @@ func (d *Database) InitDB() error {
 			last_log_file TEXT,
 			last_error TEXT,
 			source_url TEXT,
-			sort_order INTEGER NOT NULL DEFAULT 0
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			visitor_channel_actions_enabled INTEGER NOT NULL DEFAULT 0,
+			selected_models TEXT NOT NULL DEFAULT '[]'
 		);
 
 		CREATE TABLE IF NOT EXISTS runs (
@@ -235,6 +238,8 @@ func (d *Database) migrateDB() error {
 
 	hasSourceURL := false
 	hasSortOrder := false
+	hasVisitorChannelActionsEnabled := false
+	hasSelectedModels := false
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -250,12 +255,24 @@ func (d *Database) migrateDB() error {
 		if name == "sort_order" {
 			hasSortOrder = true
 		}
+		if name == "visitor_channel_actions_enabled" {
+			hasVisitorChannelActionsEnabled = true
+		}
+		if name == "selected_models" {
+			hasSelectedModels = true
+		}
 	}
 	if !hasSourceURL {
 		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN source_url TEXT")
 	}
 	if !hasSortOrder {
 		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+	}
+	if !hasVisitorChannelActionsEnabled {
+		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN visitor_channel_actions_enabled INTEGER NOT NULL DEFAULT 0")
+	}
+	if !hasSelectedModels {
+		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN selected_models TEXT NOT NULL DEFAULT '[]'")
 	}
 	_, _ = d.conn.Exec(`
 		WITH ordered AS (
@@ -278,28 +295,30 @@ func (d *Database) migrateDB() error {
 
 // Target represents a monitoring target (channel).
 type Target struct {
-	ID               int      `json:"id"`
-	Name             string   `json:"name"`
-	BaseURL          string   `json:"base_url"`
-	APIKey           string   `json:"api_key"`
-	Enabled          bool     `json:"enabled"`
-	IntervalMin      int      `json:"interval_min"`
-	TimeoutS         float64  `json:"timeout_s"`
-	VerifySSL        bool     `json:"verify_ssl"`
-	Prompt           string   `json:"prompt"`
-	AnthropicVersion string   `json:"anthropic_version"`
-	MaxModels        int      `json:"max_models"`
-	CreatedAt        float64  `json:"created_at"`
-	UpdatedAt        float64  `json:"updated_at"`
-	LastRunAt        *float64 `json:"last_run_at"`
-	LastStatus       *string  `json:"last_status"`
-	LastTotal        *int     `json:"last_total"`
-	LastSuccess      *int     `json:"last_success"`
-	LastFail         *int     `json:"last_fail"`
-	LastLogFile      *string  `json:"last_log_file"`
-	LastError        *string  `json:"last_error"`
-	SourceURL        *string  `json:"source_url"`
-	SortOrder        int      `json:"sort_order"`
+	ID                           int      `json:"id"`
+	Name                         string   `json:"name"`
+	BaseURL                      string   `json:"base_url"`
+	APIKey                       string   `json:"api_key"`
+	Enabled                      bool     `json:"enabled"`
+	IntervalMin                  int      `json:"interval_min"`
+	TimeoutS                     float64  `json:"timeout_s"`
+	VerifySSL                    bool     `json:"verify_ssl"`
+	Prompt                       string   `json:"prompt"`
+	AnthropicVersion             string   `json:"anthropic_version"`
+	MaxModels                    int      `json:"max_models"`
+	CreatedAt                    float64  `json:"created_at"`
+	UpdatedAt                    float64  `json:"updated_at"`
+	LastRunAt                    *float64 `json:"last_run_at"`
+	LastStatus                   *string  `json:"last_status"`
+	LastTotal                    *int     `json:"last_total"`
+	LastSuccess                  *int     `json:"last_success"`
+	LastFail                     *int     `json:"last_fail"`
+	LastLogFile                  *string  `json:"last_log_file"`
+	LastError                    *string  `json:"last_error"`
+	SourceURL                    *string  `json:"source_url"`
+	SortOrder                    int      `json:"sort_order"`
+	VisitorChannelActionsEnabled bool     `json:"visitor_channel_actions_enabled"`
+	SelectedModels               []string `json:"selected_models"`
 }
 
 // Run represents a detection run.
@@ -362,20 +381,30 @@ type ModelHistoryPoint struct {
 
 func scanTarget(r interface{ Scan(dest ...any) error }) (*Target, error) {
 	var t Target
-	var enabled, verifySSL int
+	var enabled, verifySSL, visitorChannelActionsEnabled int
+	var selectedModelsRaw string
 	err := r.Scan(
 		&t.ID, &t.Name, &t.BaseURL, &t.APIKey,
 		&enabled, &t.IntervalMin, &t.TimeoutS, &verifySSL,
 		&t.Prompt, &t.AnthropicVersion, &t.MaxModels,
 		&t.CreatedAt, &t.UpdatedAt,
 		&t.LastRunAt, &t.LastStatus, &t.LastTotal, &t.LastSuccess,
-		&t.LastFail, &t.LastLogFile, &t.LastError, &t.SourceURL, &t.SortOrder,
+		&t.LastFail, &t.LastLogFile, &t.LastError, &t.SourceURL, &t.SortOrder, &visitorChannelActionsEnabled, &selectedModelsRaw,
 	)
 	if err != nil {
 		return nil, err
 	}
 	t.Enabled = enabled != 0
 	t.VerifySSL = verifySSL != 0
+	t.VisitorChannelActionsEnabled = visitorChannelActionsEnabled != 0
+	if err := json.Unmarshal([]byte(selectedModelsRaw), &t.SelectedModels); err != nil {
+		t.SelectedModels = []string{}
+	} else {
+		t.SelectedModels = normalizeStringSlice(t.SelectedModels)
+	}
+	if t.SelectedModels == nil {
+		t.SelectedModels = []string{}
+	}
 	return &t, nil
 }
 
@@ -422,13 +451,13 @@ func scanModelRow(r interface{ Scan(dest ...any) error }) (*ModelRow, error) {
 // CRUD -- Targets
 // ---------------------------------------------------------------------------
 
-// ListTargets returns all targets ordered by id.
+// ListTargets returns all targets ordered by creation time (newest first).
 func (d *Database) ListTargets() ([]Target, error) {
 	conn := d.conn
 
 	rows, err := conn.Query(`
 		SELECT * FROM targets
-		ORDER BY CASE WHEN sort_order > 0 THEN sort_order ELSE id END ASC, id ASC
+		ORDER BY created_at DESC, id DESC
 	`)
 	if err != nil {
 		return nil, err
@@ -477,6 +506,9 @@ func (d *Database) CreateTarget(payload map[string]any) (*Target, error) {
 	maxModels := intFromAny(payload["max_models"], 0)
 	sourceURL := nullStringFromAny(payload["source_url"])
 	sortOrder := intFromAny(payload["sort_order"], 0)
+	visitorChannelActionsEnabled := boolFromAny(payload["visitor_channel_actions_enabled"], false)
+	selectedModels := stringSliceFromAny(payload["selected_models"])
+	selectedModelsJSON, _ := json.Marshal(selectedModels)
 
 	d.mu.Lock()
 	if sortOrder <= 0 {
@@ -488,10 +520,10 @@ func (d *Database) CreateTarget(payload map[string]any) (*Target, error) {
 	res, err := d.conn.Exec(`
 		INSERT INTO targets (
 			name, base_url, api_key, enabled, interval_min, timeout_s, verify_ssl,
-			prompt, anthropic_version, max_models, source_url, sort_order, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			prompt, anthropic_version, max_models, source_url, sort_order, visitor_channel_actions_enabled, selected_models, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		name, baseURL, apiKey, boolToInt(enabled), intervalMin, timeoutS, boolToInt(verifySSL),
-		prompt, anthropicVersion, maxModels, sourceURL, sortOrder, now, now,
+		prompt, anthropicVersion, maxModels, sourceURL, sortOrder, boolToInt(visitorChannelActionsEnabled), string(selectedModelsJSON), now, now,
 	)
 	d.mu.Unlock()
 
@@ -512,7 +544,7 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 		"name": true, "base_url": true, "api_key": true,
 		"enabled": true, "interval_min": true, "timeout_s": true,
 		"verify_ssl": true, "prompt": true, "anthropic_version": true,
-		"max_models": true, "source_url": true, "sort_order": true,
+		"max_models": true, "source_url": true, "sort_order": true, "visitor_channel_actions_enabled": true, "selected_models": true,
 	}
 
 	var setClauses []string
@@ -522,10 +554,13 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 			continue
 		}
 		switch key {
-		case "enabled", "verify_ssl":
+		case "enabled", "verify_ssl", "visitor_channel_actions_enabled":
 			args = append(args, boolToInt(boolFromAny(val, false)))
 		case "interval_min", "max_models", "sort_order":
 			args = append(args, intFromAny(val, 0))
+		case "selected_models":
+			modelsJSON, _ := json.Marshal(stringSliceFromAny(val))
+			args = append(args, string(modelsJSON))
 		case "timeout_s":
 			args = append(args, floatFromAny(val, 30.0))
 		default:
@@ -1036,6 +1071,51 @@ func nullStringFromAny(v any) *string {
 		return &s
 	}
 	return nil
+}
+
+func normalizeStringSlice(items []string) []string {
+	if len(items) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		s := strings.TrimSpace(item)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	if out == nil {
+		return []string{}
+	}
+	return out
+}
+
+func stringSliceFromAny(v any) []string {
+	if v == nil {
+		return []string{}
+	}
+	switch vv := v.(type) {
+	case []string:
+		return normalizeStringSlice(vv)
+	case []any:
+		tmp := make([]string, 0, len(vv))
+		for _, item := range vv {
+			s, ok := item.(string)
+			if !ok {
+				continue
+			}
+			tmp = append(tmp, s)
+		}
+		return normalizeStringSlice(tmp)
+	default:
+		return []string{}
+	}
 }
 
 func joinStrings(ss []string, sep string) string {

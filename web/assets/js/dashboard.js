@@ -11,6 +11,7 @@ function dashboard() {
         editingId: null,
         form: {},
         formError: '',
+        authRole: 'visitor',
 
         defaultForm: {
             name: '', base_url: '', api_key: '', source_url: '',
@@ -46,6 +47,8 @@ function dashboard() {
                 const res = await Utils.authFetch('/api/targets');
                 const data = await res.json();
                 this.targets = data.items || [];
+                const permissions = data.permissions || {};
+                this.authRole = permissions.role || 'visitor';
             } catch (e) {
                 console.error('Failed to load targets', e);
             }

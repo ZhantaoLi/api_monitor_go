@@ -151,6 +151,126 @@ body {
     box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
 }
 
+/* Visitor action switch (admin channels table) */
+.visitor-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.visitor-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.visitor-switch-track {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 56px;
+    height: 30px;
+    padding: 0 8px;
+    border-radius: 9999px;
+    border: 1px solid rgba(161, 161, 170, 0.7);
+    background: rgba(228, 228, 231, 0.8);
+    transition: all 0.2s ease;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    user-select: none;
+}
+
+.dark .visitor-switch-track {
+    border-color: rgba(82, 82, 91, 0.9);
+    background: rgba(63, 63, 70, 0.7);
+}
+
+.visitor-switch-on,
+.visitor-switch-off {
+    position: relative;
+    z-index: 1;
+    line-height: 1;
+    transition: opacity 0.2s ease;
+}
+
+.visitor-switch-on {
+    color: #ffffff;
+    opacity: 0;
+}
+
+.visitor-switch-off {
+    color: #71717a;
+    opacity: 1;
+}
+
+.dark .visitor-switch-off {
+    color: #d4d4d8;
+}
+
+.visitor-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 24px;
+    height: 24px;
+    border-radius: 9999px;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+    transition: transform 0.2s ease;
+}
+
+.dark .visitor-switch-thumb {
+    background: #fafafa;
+}
+
+.visitor-switch input:checked + .visitor-switch-track {
+    border-color: rgba(99, 102, 241, 0.6);
+    background: rgba(99, 102, 241, 0.95);
+}
+
+.dark .visitor-switch input:checked + .visitor-switch-track {
+    border-color: rgba(129, 140, 248, 0.8);
+    background: rgba(99, 102, 241, 0.9);
+}
+
+.visitor-switch input:checked + .visitor-switch-track .visitor-switch-thumb {
+    transform: translateX(26px);
+}
+
+.visitor-switch input:checked + .visitor-switch-track .visitor-switch-on {
+    opacity: 1;
+}
+
+.visitor-switch input:checked + .visitor-switch-track .visitor-switch-off {
+    opacity: 0;
+}
+
+.visitor-switch input:focus-visible + .visitor-switch-track {
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+/* Compact switch (model selection list) */
+.visitor-switch--compact .visitor-switch-track {
+    width: 44px;
+    height: 24px;
+    padding: 0 6px;
+    font-size: 9px;
+}
+
+.visitor-switch--compact .visitor-switch-thumb {
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+}
+
+.visitor-switch--compact input:checked + .visitor-switch-track .visitor-switch-thumb {
+    transform: translateX(20px);
+}
+
 /* Status dots */
 .status-dot {
     height: 8px;

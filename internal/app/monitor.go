@@ -602,6 +602,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 		log.Printf("[monitor] run failed target=%s: %v", target.Name, err)
 		return
 	}
+	models = filterModelsBySelection(models, target.SelectedModels)
 
 	if target.MaxModels > 0 && len(models) > target.MaxModels {
 		models = models[:target.MaxModels]
@@ -762,6 +763,31 @@ func (ms *MonitorService) getModels(target *Target, client *http.Client) ([]stri
 		return nil, fmt.Errorf("models list is empty")
 	}
 	return models, nil
+}
+
+func filterModelsBySelection(models []string, selectedModels []string) []string {
+	if len(models) == 0 || len(selectedModels) == 0 {
+		return models
+	}
+	allowed := make(map[string]struct{}, len(selectedModels))
+	for _, model := range selectedModels {
+		s := strings.TrimSpace(model)
+		if s == "" {
+			continue
+		}
+		allowed[s] = struct{}{}
+	}
+	if len(allowed) == 0 {
+		return models
+	}
+
+	filtered := make([]string, 0, len(models))
+	for _, model := range models {
+		if _, ok := allowed[model]; ok {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
 }
 
 func (ms *MonitorService) chooseRoute(modelID string) string {

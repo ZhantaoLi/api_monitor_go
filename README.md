@@ -91,8 +91,8 @@ api_monitor_go/
 
 - `PORT`：服务端口，默认 `8081`
 - `DATA_DIR`：数据目录，默认 `data`
-- `API_MONITOR_TOKEN`：API 鉴权 Token；为空时首次启动自动生成并持久化
-- `ADMIN_PANEL_PASSWORD`：后台管理密码；为空时首次启动自动生成并持久化
+- `API_MONITOR_TOKEN_ADMIN`：管理员 Token（同时用于 API 读写与 `/admin/login`）；为空时首次启动自动生成并持久化
+- `API_MONITOR_TOKEN_VISITOR`：访客 API Token（默认只读）；可留空，留空时禁用访客 token 鉴权
 - `DEFAULT_INTERVAL_MIN`：默认检测间隔（分钟），默认 `30`
 - `LOG_CLEANUP_ENABLED`：日志清理开关，默认 `true`
 - `LOG_MAX_SIZE_MB`：日志目录总大小上限，默认 `500`
@@ -113,7 +113,7 @@ docker compose pull
 docker compose up -d
 ```
 
-首次启动若未显式设置 `API_MONITOR_TOKEN` / `ADMIN_PANEL_PASSWORD`，服务会自动生成并在日志中打印：
+首次启动若未显式设置 `API_MONITOR_TOKEN_ADMIN`，服务会自动生成并在日志中打印：
 
 ```bash
 docker compose logs -f
@@ -127,6 +127,13 @@ docker compose logs -f
 
 - 除 `GET /api/health` 和静态页面外，API 需要：
   - `Authorization: Bearer <token>`
+- Token 角色：
+  - `API_MONITOR_TOKEN_ADMIN`：可读写（管理操作始终可用），并用于后台登录 `/admin/login`
+  - `API_MONITOR_TOKEN_VISITOR`：默认只读；可留空禁用。若已设置，是否允许渠道下拉操作由管理员在后台开关控制
+- 内置防爆破（按来源 IP，内存态，无落库）：
+  - Token 鉴权失败：`1` 分钟内累计 `30` 次后封禁 `10` 分钟
+  - 管理登录失败：`1` 分钟内累计 `8` 次后封禁 `30` 分钟
+  - 被封禁时返回 `429`，并带 `Retry-After` 响应头
 - SSE 端点额外支持：
   - `GET /api/events?token=<token>`
 
@@ -141,6 +148,8 @@ docker compose logs -f
   - `GET /api/admin/resources`
   - `GET /api/admin/channels`
   - `PATCH /api/admin/channels/{id}/advanced`
+  - `GET /api/admin/channels/{id}/models`
+  - `PATCH /api/admin/channels/{id}/models`
 
 ## 主要接口
 

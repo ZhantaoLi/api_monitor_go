@@ -98,7 +98,7 @@
           class="flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 px-3 py-2 rounded-lg font-medium text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700">
           <i class="ph-bold ph-gear-six"></i>
         </a>
-        <button @click="openCreateModal()"
+        <button @click="openCreateModal()" x-show="authRole === 'admin'"
           class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
           <i class="ph-bold ph-plus"></i>
           <span>Add Channel</span>
@@ -219,46 +219,49 @@
               <!-- Actions Bar -->
               <div class="flex justify-between items-center mb-4">
                 <span class="text-xs font-bold uppercase text-zinc-500 tracking-wider">Model Status</span>
-                <div class="flex gap-2">
-                  <button @click.stop="runTarget(t.id)" :disabled="t.running"
-                    class="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="ph-bold ph-play" :class="t.running ? 'animate-pulse' : ''"></i>
-                    <span x-text="t.running ? 'Checking...' : 'Check Now'"></span>
-                  </button>
+                <div class="flex items-center gap-2">
                   <a :href="`/viewer.html?target_id=${t.id}`"
                     class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors flex items-center gap-1.5">
                     <i class="ph-bold ph-list-magnifying-glass"></i>
                     Detailed Logs
                   </a>
-                  <button @click.stop="copyConfig(t).then(() => { 
-                      const btn = $el; 
-                      const orig = btn.innerHTML; 
-                      btn.innerHTML = '<i class=\'ph-bold ph-check text-green-500\'></i>'; 
-                      setTimeout(() => btn.innerHTML = orig, 1500); 
-                    })"
-                    class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
-                    title="Copy API">
-                    <i class="ph-bold ph-copy"></i>
-                  </button>
                   <a x-show="t.source_url" :href="t.source_url" target="_blank" @click.stop
                     class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
                     title="Open Source">
                     <i class="ph-bold ph-link"></i>
                   </a>
-                  <button @click.stop="openEdit(t)"
-                    class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors">
-                    <i class="ph-bold ph-pencil-simple"></i>
-                  </button>
-                  <button @click.stop="toggleEnabled(t)"
-                    class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                    :class="t.enabled ? 'text-zinc-500' : 'text-zinc-400'">
-                    <i class="ph-bold" :class="t.enabled ? 'ph-power' : 'ph-plug'"></i>
-                  </button>
-                  <button @click.stop="deleteTarget(t.id)"
-                    class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-zinc-400 hover:text-red-500 transition-colors"
-                    title="Delete Channel">
-                    <i class="ph-bold ph-trash"></i>
-                  </button>
+
+                  <div class="flex items-center gap-2" x-show="authRole === 'admin'">
+                    <button @click.stop="runTarget(t.id)" :disabled="t.running"
+                      class="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                      <i class="ph-bold ph-play" :class="t.running ? 'animate-pulse' : ''"></i>
+                      <span x-text="t.running ? 'Checking...' : 'Check Now'"></span>
+                    </button>
+                    <button @click.stop="copyConfig(t).then(() => { 
+                        const btn = $el; 
+                        const orig = btn.innerHTML; 
+                        btn.innerHTML = '<i class=\'ph-bold ph-check text-green-500\'></i>'; 
+                        setTimeout(() => btn.innerHTML = orig, 1500); 
+                      })"
+                      class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
+                      title="Copy API">
+                      <i class="ph-bold ph-copy"></i>
+                    </button>
+                    <button @click.stop="openEdit(t)"
+                      class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors">
+                      <i class="ph-bold ph-pencil-simple"></i>
+                    </button>
+                    <button @click.stop="toggleEnabled(t)"
+                      class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                      :class="t.enabled ? 'text-zinc-500' : 'text-zinc-400'">
+                      <i class="ph-bold" :class="t.enabled ? 'ph-power' : 'ph-plug'"></i>
+                    </button>
+                    <button @click.stop="deleteTarget(t.id)"
+                      class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-zinc-400 hover:text-red-500 transition-colors"
+                      title="Delete Channel">
+                      <i class="ph-bold ph-trash"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
 

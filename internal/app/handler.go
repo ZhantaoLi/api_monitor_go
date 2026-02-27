@@ -145,6 +145,41 @@ func validateTargetPayload(payload map[string]any) error {
 			return fmt.Errorf("source_url must be <= 1024 chars")
 		}
 	}
+	if _, ok := payload["visitor_channel_actions_enabled"]; ok {
+		if _, ok := payload["visitor_channel_actions_enabled"].(bool); !ok {
+			return fmt.Errorf("visitor_channel_actions_enabled must be a boolean")
+		}
+	}
+	if v, ok := payload["selected_models"]; ok {
+		switch arr := v.(type) {
+		case []any:
+			if len(arr) > 5000 {
+				return fmt.Errorf("selected_models must contain <= 5000 items")
+			}
+			for _, item := range arr {
+				s, ok := item.(string)
+				if !ok {
+					return fmt.Errorf("selected_models must be an array of strings")
+				}
+				s = strings.TrimSpace(s)
+				if s == "" || len(s) > 256 {
+					return fmt.Errorf("each selected_models item must be 1-256 chars")
+				}
+			}
+		case []string:
+			if len(arr) > 5000 {
+				return fmt.Errorf("selected_models must contain <= 5000 items")
+			}
+			for _, item := range arr {
+				s := strings.TrimSpace(item)
+				if s == "" || len(s) > 256 {
+					return fmt.Errorf("each selected_models item must be 1-256 chars")
+				}
+			}
+		default:
+			return fmt.Errorf("selected_models must be an array of strings")
+		}
+	}
 	return nil
 }
 
@@ -158,6 +193,25 @@ type Handlers struct {
 	monitor *MonitorService
 	bus     *SSEBus
 	admin   *AdminSessionManager
+}
+
+func (h *Handlers) canOperateChannels(r *http.Request, target *Target) bool {
+	role := authRoleFromRequest(r)
+	if role == authRoleAdmin {
+		return true
+	}
+	if role == authRoleVisitor && target != nil {
+		return target.VisitorChannelActionsEnabled
+	}
+	return false
+}
+
+func (h *Handlers) requireChannelOperationPermission(w http.ResponseWriter, r *http.Request, target *Target) bool {
+	if h.canOperateChannels(r, target) {
+		return true
+	}
+	writeJSON(w, http.StatusForbidden, map[string]any{"detail": "channel operations are disabled for visitor token"})
+	return false
 }
 
 // targetRuntimeFields enriches a Target with computed fields for the API response.
@@ -177,31 +231,33 @@ func (h *Handlers) targetRuntimeFieldsWithData(t *Target, running bool, models [
 	}
 
 	result := map[string]any{
-		"id":                t.ID,
-		"name":              t.Name,
-		"base_url":          t.BaseURL,
-		"api_key":           t.APIKey,
-		"enabled":           t.Enabled,
-		"interval_min":      t.IntervalMin,
-		"timeout_s":         t.TimeoutS,
-		"verify_ssl":        t.VerifySSL,
-		"prompt":            t.Prompt,
-		"anthropic_version": t.AnthropicVersion,
-		"max_models":        t.MaxModels,
-		"created_at":        t.CreatedAt,
-		"updated_at":        t.UpdatedAt,
-		"last_run_at":       t.LastRunAt,
-		"last_status":       t.LastStatus,
-		"last_total":        t.LastTotal,
-		"last_success":      t.LastSuccess,
-		"last_fail":         t.LastFail,
-		"last_log_file":     t.LastLogFile,
-		"last_error":        t.LastError,
-		"source_url":        t.SourceURL,
-		"sort_order":        t.SortOrder,
-		"last_success_rate": successRate,
-		"running":           running,
-		"latest_models":     models,
+		"id":                              t.ID,
+		"name":                            t.Name,
+		"base_url":                        t.BaseURL,
+		"api_key":                         t.APIKey,
+		"enabled":                         t.Enabled,
+		"interval_min":                    t.IntervalMin,
+		"timeout_s":                       t.TimeoutS,
+		"verify_ssl":                      t.VerifySSL,
+		"prompt":                          t.Prompt,
+		"anthropic_version":               t.AnthropicVersion,
+		"max_models":                      t.MaxModels,
+		"created_at":                      t.CreatedAt,
+		"updated_at":                      t.UpdatedAt,
+		"last_run_at":                     t.LastRunAt,
+		"last_status":                     t.LastStatus,
+		"last_total":                      t.LastTotal,
+		"last_success":                    t.LastSuccess,
+		"last_fail":                       t.LastFail,
+		"last_log_file":                   t.LastLogFile,
+		"last_error":                      t.LastError,
+		"source_url":                      t.SourceURL,
+		"sort_order":                      t.SortOrder,
+		"visitor_channel_actions_enabled": t.VisitorChannelActionsEnabled,
+		"selected_models":                 t.SelectedModels,
+		"last_success_rate":               successRate,
+		"running":                         running,
+		"latest_models":                   models,
 	}
 	return result
 }
@@ -296,13 +352,27 @@ func (h *Handlers) ListTargets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := make([]map[string]any, 0, len(targets))
+	role := authRoleFromRequest(r)
+	roleStr := "visitor"
+	if role == authRoleAdmin {
+		roleStr = "admin"
+	}
+
 	for i := range targets {
 		t := &targets[i]
 		models := modelsByTarget[t.ID]
 		attachModelHistory(models, historyByTarget[t.ID])
-		items = append(items, h.targetRuntimeFieldsWithData(t, runningSet[t.ID], models))
+		item := h.targetRuntimeFieldsWithData(t, runningSet[t.ID], models)
+		item["can_operate"] = h.canOperateChannels(r, t)
+		items = append(items, item)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"permissions": map[string]any{
+			"role": roleStr,
+		},
+	})
 }
 
 // GetTarget -- GET /api/targets/{id}
@@ -326,6 +396,11 @@ func (h *Handlers) GetTarget(w http.ResponseWriter, r *http.Request) {
 
 // CreateTarget -- POST /api/targets
 func (h *Handlers) CreateTarget(w http.ResponseWriter, r *http.Request) {
+	// Visitor token cannot create a new channel because no per-channel scope exists yet.
+	if authRoleFromRequest(r) != authRoleAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]any{"detail": "admin token required to create channel"})
+		return
+	}
 	var payload map[string]any
 	if err := readJSON(r, &payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
@@ -368,6 +443,9 @@ func (h *Handlers) PatchTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
 	}
+	if !h.requireChannelOperationPermission(w, r, existing) {
+		return
+	}
 
 	var updates map[string]any
 	if err := readJSON(r, &updates); err != nil {
@@ -407,6 +485,9 @@ func (h *Handlers) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
 	}
+	if !h.requireChannelOperationPermission(w, r, existing) {
+		return
+	}
 	success, err := h.db.DeleteTarget(id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
@@ -424,6 +505,18 @@ func (h *Handlers) RunTarget(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid id"})
+		return
+	}
+	existing, err := h.db.GetTarget(id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+		return
+	}
+	if existing == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
+		return
+	}
+	if !h.requireChannelOperationPermission(w, r, existing) {
 		return
 	}
 	triggered, msg := h.monitor.TriggerTarget(id, true)

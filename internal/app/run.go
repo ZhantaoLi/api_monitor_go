@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	settingRuntimeAPIToken      = "runtime_api_monitor_token"
-	settingRuntimeAdminPassword = "runtime_admin_panel_password"
+	settingRuntimeAPIToken        = "runtime_api_monitor_token"
+	settingRuntimeVisitorAPIToken = "runtime_api_monitor_visitor_token"
 )
 
 func envInt(name string, def int) int {
@@ -83,6 +83,24 @@ func resolveRuntimeSecret(db *Database, envName, settingKey, randomPrefix string
 	return generated, true, nil
 }
 
+// resolveOptionalRuntimeSecret resolves a runtime secret that can be empty.
+// Priority: env (including explicit empty) > persisted value > empty default.
+// It never auto-generates a value.
+func resolveOptionalRuntimeSecret(db *Database, envName, settingKey string) (string, bool, error) {
+	if envValue, ok := os.LookupEnv(envName); ok {
+		return strings.TrimSpace(envValue), false, nil
+	}
+
+	stored, ok, err := db.GetSetting(settingKey)
+	if err != nil {
+		return "", false, err
+	}
+	if ok {
+		return strings.TrimSpace(stored), false, nil
+	}
+	return "", false, nil
+}
+
 func Start(webFS fs.FS) {
 	// ---- Config from environment ----
 	dataDir := os.Getenv("DATA_DIR")
@@ -123,27 +141,25 @@ func Start(webFS fs.FS) {
 	if err := db.EnsureSettingDefault(settingProxyMasterToken, proxyMasterTokenDefault); err != nil {
 		log.Fatalf("settings init failed: %v", err)
 	}
-
-	runtimeAPIToken, apiTokenGenerated, err := resolveRuntimeSecret(
+	runtimeAdminAPIToken, adminTokenGenerated, err := resolveRuntimeSecret(
 		db,
-		"API_MONITOR_TOKEN",
+		"API_MONITOR_TOKEN_ADMIN",
 		settingRuntimeAPIToken,
 		"amtk-",
 	)
 	if err != nil {
-		log.Fatalf("api token init failed: %v", err)
+		log.Fatalf("admin api token init failed: %v", err)
 	}
-	setAuthToken(runtimeAPIToken)
 
-	adminPassword, adminPasswordGenerated, err := resolveRuntimeSecret(
+	runtimeVisitorAPIToken, _, err := resolveOptionalRuntimeSecret(
 		db,
-		"ADMIN_PANEL_PASSWORD",
-		settingRuntimeAdminPassword,
-		"admp-",
+		"API_MONITOR_TOKEN_VISITOR",
+		settingRuntimeVisitorAPIToken,
 	)
 	if err != nil {
-		log.Fatalf("admin password init failed: %v", err)
+		log.Fatalf("visitor api token init failed: %v", err)
 	}
+	setAuthTokens(runtimeAdminAPIToken, runtimeVisitorAPIToken)
 
 	settingValues, err := db.GetSettings([]string{
 		settingLogCleanupEnabled,
@@ -179,20 +195,19 @@ func Start(webFS fs.FS) {
 
 	log.Printf("[main] log cleanup config enabled=%v max_mb=%d", logCleanupEnabled, logMaxSizeMB)
 	log.Println("[main] auth=enabled")
-	if apiTokenGenerated {
-		log.Printf("[main] generated API_MONITOR_TOKEN=%s", runtimeAPIToken)
-		log.Println("[main] save this token now; it is required for all protected APIs")
+	if adminTokenGenerated {
+		log.Printf("[main] generated API_MONITOR_TOKEN_ADMIN=%s", runtimeAdminAPIToken)
+		log.Println("[main] save this token now; it is required for write operations and /admin/login")
+	}
+	if runtimeVisitorAPIToken == "" {
+		log.Println("[main] API_MONITOR_TOKEN_VISITOR is empty: visitor token auth is disabled")
 	}
 
-	adminSessions := NewAdminSessionManager(adminPassword, 24*time.Hour)
+	adminSessions := NewAdminSessionManager(runtimeAdminAPIToken, 24*time.Hour)
 	if adminSessions.Enabled() {
 		log.Println("[main] admin panel=enabled")
 	} else {
-		log.Fatal("[main] admin panel password is empty")
-	}
-	if adminPasswordGenerated {
-		log.Printf("[main] generated ADMIN_PANEL_PASSWORD=%s", adminPassword)
-		log.Println("[main] save this password now; it is required for /admin/login")
+		log.Fatal("[main] admin panel token is empty")
 	}
 
 	// ---- Handlers ----
@@ -278,18 +293,18 @@ func Start(webFS fs.FS) {
 	mux.HandleFunc("POST /api/admin/login", h.AdminLogin)
 
 	// SSE (auth)
-	mux.Handle("GET /api/events", authMiddleware(bus))
+	mux.Handle("GET /api/events", authAnyMiddleware(bus))
 
 	// Protected API
-	mux.Handle("GET /api/dashboard", authMiddleware(http.HandlerFunc(h.Dashboard)))
-	mux.Handle("GET /api/targets", authMiddleware(http.HandlerFunc(h.ListTargets)))
-	mux.Handle("GET /api/targets/{id}", authMiddleware(http.HandlerFunc(h.GetTarget)))
-	mux.Handle("POST /api/targets", authMiddleware(http.HandlerFunc(h.CreateTarget)))
-	mux.Handle("PATCH /api/targets/{id}", authMiddleware(http.HandlerFunc(h.PatchTarget)))
-	mux.Handle("DELETE /api/targets/{id}", authMiddleware(http.HandlerFunc(h.DeleteTarget)))
-	mux.Handle("POST /api/targets/{id}/run", authMiddleware(http.HandlerFunc(h.RunTarget)))
-	mux.Handle("GET /api/targets/{id}/runs", authMiddleware(http.HandlerFunc(h.ListRuns)))
-	mux.Handle("GET /api/targets/{id}/logs", authMiddleware(http.HandlerFunc(h.GetLogs)))
+	mux.Handle("GET /api/dashboard", authAnyMiddleware(http.HandlerFunc(h.Dashboard)))
+	mux.Handle("GET /api/targets", authAnyMiddleware(http.HandlerFunc(h.ListTargets)))
+	mux.Handle("GET /api/targets/{id}", authAnyMiddleware(http.HandlerFunc(h.GetTarget)))
+	mux.Handle("POST /api/targets", authAnyMiddleware(http.HandlerFunc(h.CreateTarget)))
+	mux.Handle("PATCH /api/targets/{id}", authAnyMiddleware(http.HandlerFunc(h.PatchTarget)))
+	mux.Handle("DELETE /api/targets/{id}", authAnyMiddleware(http.HandlerFunc(h.DeleteTarget)))
+	mux.Handle("POST /api/targets/{id}/run", authAnyMiddleware(http.HandlerFunc(h.RunTarget)))
+	mux.Handle("GET /api/targets/{id}/runs", authAnyMiddleware(http.HandlerFunc(h.ListRuns)))
+	mux.Handle("GET /api/targets/{id}/logs", authAnyMiddleware(http.HandlerFunc(h.GetLogs)))
 	mux.Handle("GET /api/proxy/keys", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.ListProxyKeys)))
 	mux.Handle("POST /api/proxy/keys", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.CreateProxyKey)))
 	mux.Handle("DELETE /api/proxy/keys/{id}", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.RevokeProxyKey)))
@@ -299,6 +314,8 @@ func Start(webFS fs.FS) {
 	mux.Handle("GET /api/admin/resources", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminGetResources)))
 	mux.Handle("GET /api/admin/channels", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminListChannels)))
 	mux.Handle("PATCH /api/admin/channels/{id}/advanced", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminPatchChannelAdvanced)))
+	mux.Handle("GET /api/admin/channels/{id}/models", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminGetChannelModels)))
+	mux.Handle("PATCH /api/admin/channels/{id}/models", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminPatchChannelModels)))
 
 	// Public proxy endpoints (authenticated by proxy key in Authorization header)
 	mux.HandleFunc("GET /v1/models", h.ProxyModels)

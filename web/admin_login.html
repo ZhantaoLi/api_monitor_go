@@ -32,15 +32,15 @@
       </div>
 
       <p class="text-sm text-zinc-500 mb-4">
-        Enter admin password to manage proxy token, interval and cleanup settings.
+        Enter `API_MONITOR_TOKEN_ADMIN` to access admin settings.
       </p>
 
       <form id="admin-login-form" class="space-y-4">
         <div class="space-y-1">
-          <label for="admin-password" class="text-xs font-bold text-zinc-500 uppercase tracking-wider">Password</label>
+          <label for="admin-password" class="text-xs font-bold text-zinc-500 uppercase tracking-wider">Admin Token</label>
           <div class="relative">
             <input id="admin-password" type="password" required
-              class="w-full form-input rounded-lg pl-3 pr-10 py-2 text-sm font-mono" placeholder="ADMIN_PANEL_PASSWORD">
+              class="w-full form-input rounded-lg pl-3 pr-10 py-2 text-sm font-mono" placeholder="API_MONITOR_TOKEN_ADMIN">
             <button id="toggle-password-btn" type="button"
               class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
               <i class="ph-bold ph-eye"></i>

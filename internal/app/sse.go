@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -95,42 +96,135 @@ func (b *SSEBus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Auth Middleware
 // ---------------------------------------------------------------------------
 
-var apiToken string
-var apiTokenMu sync.RWMutex
+type authRole string
+
+const (
+	authRoleUnknown authRole = "unknown"
+	authRoleVisitor authRole = "visitor"
+	authRoleAdmin   authRole = "admin"
+)
+
+type authRoleContextKey struct{}
+
+var authRoleKey = authRoleContextKey{}
+
+var authAdminToken string
+var authVisitorToken string
+var authTokenMu sync.RWMutex
+
+func setAuthTokens(adminToken, visitorToken string) {
+	authTokenMu.Lock()
+	authAdminToken = strings.TrimSpace(adminToken)
+	authVisitorToken = strings.TrimSpace(visitorToken)
+	authTokenMu.Unlock()
+}
+
+func getAdminAuthToken() string {
+	authTokenMu.RLock()
+	defer authTokenMu.RUnlock()
+	return authAdminToken
+}
+
+func getVisitorAuthToken() string {
+	authTokenMu.RLock()
+	defer authTokenMu.RUnlock()
+	return authVisitorToken
+}
 
 func setAuthToken(token string) {
-	apiTokenMu.Lock()
-	apiToken = strings.TrimSpace(token)
-	apiTokenMu.Unlock()
+	setAuthTokens(token, getVisitorAuthToken())
 }
 
 func getAuthToken() string {
-	apiTokenMu.RLock()
-	defer apiTokenMu.RUnlock()
-	return apiToken
+	return getAdminAuthToken()
 }
 
-// authMiddleware checks the Bearer token.
-func authMiddleware(next http.Handler) http.Handler {
+func withAuthRole(r *http.Request, role authRole) *http.Request {
+	ctx := context.WithValue(r.Context(), authRoleKey, role)
+	return r.WithContext(ctx)
+}
+
+func authRoleFromRequest(r *http.Request) authRole {
+	if r == nil {
+		return authRoleUnknown
+	}
+	role, ok := r.Context().Value(authRoleKey).(authRole)
+	if !ok || role == "" {
+		return authRoleUnknown
+	}
+	return role
+}
+
+func authenticateRequestRole(r *http.Request) (authRole, bool) {
+	adminToken := getAdminAuthToken()
+	visitorToken := getVisitorAuthToken()
+	if adminToken == "" {
+		return authRoleUnknown, false
+	}
+
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if auth == "Bearer "+adminToken {
+		return authRoleAdmin, true
+	}
+	if visitorToken != "" && auth == "Bearer "+visitorToken {
+		return authRoleVisitor, true
+	}
+
+	if r.Method == http.MethodGet && r.URL.Path == "/api/events" {
+		queryToken := strings.TrimSpace(r.URL.Query().Get("token"))
+		if queryToken == adminToken {
+			return authRoleAdmin, true
+		}
+		if visitorToken != "" && queryToken == visitorToken {
+			return authRoleVisitor, true
+		}
+	}
+
+	return authRoleUnknown, false
+}
+
+// authAnyMiddleware allows both admin token and visitor token.
+func authAnyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := getAuthToken()
-		if token == "" {
+		if getAdminAuthToken() == "" {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"detail": "auth token not initialized"})
 			return
 		}
-		// Check Authorization header
-		auth := r.Header.Get("Authorization")
-		if auth == "Bearer "+token {
-			next.ServeHTTP(w, r)
+		clientIP := clientIPFromRequest(r)
+		if blocked, retryAfter := globalAuthFailureProtector.IsBlocked(authFailureScopeToken, clientIP); blocked {
+			writeBlockedAuthResponse(w, retryAfter)
 			return
 		}
-		// Only allow ?token= on SSE endpoint (EventSource cannot set custom headers).
-		if r.Method == http.MethodGet &&
-			r.URL.Path == "/api/events" &&
-			r.URL.Query().Get("token") == token {
-			next.ServeHTTP(w, r)
+		role, ok := authenticateRequestRole(r)
+		if ok {
+			globalAuthFailureProtector.Clear(authFailureScopeToken, clientIP)
+			next.ServeHTTP(w, withAuthRole(r, role))
 			return
 		}
+		globalAuthFailureProtector.RecordFailure(authFailureScopeToken, clientIP)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"detail": "unauthorized"})
+	})
+}
+
+// authAdminTokenMiddleware allows admin token only.
+func authAdminTokenMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if getAdminAuthToken() == "" {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"detail": "auth token not initialized"})
+			return
+		}
+		clientIP := clientIPFromRequest(r)
+		if blocked, retryAfter := globalAuthFailureProtector.IsBlocked(authFailureScopeToken, clientIP); blocked {
+			writeBlockedAuthResponse(w, retryAfter)
+			return
+		}
+		role, ok := authenticateRequestRole(r)
+		if ok && role == authRoleAdmin {
+			globalAuthFailureProtector.Clear(authFailureScopeToken, clientIP)
+			next.ServeHTTP(w, withAuthRole(r, role))
+			return
+		}
+		globalAuthFailureProtector.RecordFailure(authFailureScopeToken, clientIP)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"detail": "admin token required"})
 	})
 }

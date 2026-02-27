@@ -111,6 +111,9 @@
         item: null,
         channels: [],
         editingChannelId: null,
+        modelSelectingChannelId: null,
+        modelSelectionAvailable: [],
+        modelSelectionChecked: new Set(),
         resourceTimer: null,
         lastResourceSample: null,
 
@@ -133,26 +136,73 @@
             const cancelBtn = dom.byId('channel-advanced-cancel-btn');
             const saveBtn = dom.byId('channel-advanced-save-btn');
             const backdrop = dom.byId('channel-advanced-backdrop');
+            const modelsCloseBtn = dom.byId('channel-models-close-btn');
+            const modelsCancelBtn = dom.byId('channel-models-cancel-btn');
+            const modelsSaveBtn = dom.byId('channel-models-save-btn');
+            const modelsBackdrop = dom.byId('channel-models-backdrop');
+            const modelsSelectAllBtn = dom.byId('channel-models-select-all-btn');
+            const modelsLastOKBtn = dom.byId('channel-models-last-ok-btn');
+            const modelsClearBtn = dom.byId('channel-models-clear-btn');
             const tbody = dom.byId('admin-channel-list-body');
 
             if (closeBtn) closeBtn.addEventListener('click', () => this.closeChannelAdvancedModal());
             if (cancelBtn) cancelBtn.addEventListener('click', () => this.closeChannelAdvancedModal());
             if (backdrop) backdrop.addEventListener('click', () => this.closeChannelAdvancedModal());
             if (saveBtn) saveBtn.addEventListener('click', () => this.saveChannelAdvanced());
+            if (modelsCloseBtn) modelsCloseBtn.addEventListener('click', () => this.closeChannelModelsModal());
+            if (modelsCancelBtn) modelsCancelBtn.addEventListener('click', () => this.closeChannelModelsModal());
+            if (modelsBackdrop) modelsBackdrop.addEventListener('click', () => this.closeChannelModelsModal());
+            if (modelsSaveBtn) modelsSaveBtn.addEventListener('click', () => this.saveChannelModelsSelection());
+            if (modelsSelectAllBtn) modelsSelectAllBtn.addEventListener('click', () => this.toggleAllChannelModels(true));
+            if (modelsLastOKBtn) modelsLastOKBtn.addEventListener('click', () => this.selectLastOKModels());
+            if (modelsClearBtn) modelsClearBtn.addEventListener('click', () => this.toggleAllChannelModels(false));
             if (tbody) {
                 tbody.addEventListener('click', (e) => {
                     const btn = e.target.closest('[data-action="edit-advanced"]');
-                    if (!btn) return;
-                    const id = parseIntStrict(btn.dataset.id, 0);
-                    if (id > 0) {
-                        this.openChannelAdvancedModal(id);
+                    if (btn) {
+                        const id = parseIntStrict(btn.dataset.id, 0);
+                        if (id > 0) {
+                            this.openChannelAdvancedModal(id);
+                        }
+                        return;
                     }
+
+                    const modelBtn = e.target.closest('[data-action="select-models"]');
+                    if (!modelBtn) return;
+                    const id = parseIntStrict(modelBtn.dataset.id, 0);
+                    if (id > 0) {
+                        this.openChannelModelsModal(id);
+                    }
+                });
+                tbody.addEventListener('change', (e) => {
+                    const toggle = e.target.closest('[data-action="toggle-visitor-actions"]');
+                    if (!toggle) return;
+                    const id = parseIntStrict(toggle.dataset.id, 0);
+                    if (id < 1) return;
+                    const enabled = !!toggle.checked;
+                    this.setChannelVisitorActions(id, enabled, toggle);
+                });
+            }
+            const modelsList = dom.byId('channel-models-list');
+            if (modelsList) {
+                modelsList.addEventListener('change', (e) => {
+                    const cb = e.target.closest('[data-model-checkbox]');
+                    if (!cb) return;
+                    const model = String(cb.dataset.model || '').trim();
+                    if (!model) return;
+                    if (cb.checked) {
+                        this.modelSelectionChecked.add(model);
+                    } else {
+                        this.modelSelectionChecked.delete(model);
+                    }
+                    this.updateChannelModelsMeta();
                 });
             }
 
             window.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
                     this.closeChannelAdvancedModal();
+                    this.closeChannelModelsModal();
                 }
             });
         },
@@ -196,8 +246,8 @@
 
         async initPanel() {
             this.bindThemeToggle();
-            this.bindVisibilityToggle('toggle-api-token-btn', 'api-monitor-token');
-            this.bindVisibilityToggle('toggle-admin-password-btn', 'admin-panel-password');
+            this.bindVisibilityToggle('toggle-api-token-admin-btn', 'api-monitor-token-admin');
+            this.bindVisibilityToggle('toggle-api-token-visitor-btn', 'api-monitor-token-visitor');
             this.bindVisibilityToggle('toggle-proxy-token-btn', 'proxy-master-token');
             this.bindChannelModalControls();
 
@@ -421,39 +471,39 @@
             this.item = item || null;
             if (!this.item) return;
 
-            const apiMonitorTokenInput = dom.byId('api-monitor-token');
-            const adminPasswordInput = dom.byId('admin-panel-password');
+            const apiMonitorAdminTokenInput = dom.byId('api-monitor-token-admin');
+            const apiMonitorVisitorTokenInput = dom.byId('api-monitor-token-visitor');
             const proxyInput = dom.byId('proxy-master-token');
             const cleanupEnabledInput = dom.byId('log-cleanup-enabled');
             const cleanupSizeInput = dom.byId('log-max-size-mb');
 
-            if (apiMonitorTokenInput) apiMonitorTokenInput.value = this.item.api_monitor_token || '';
-            if (adminPasswordInput) adminPasswordInput.value = this.item.admin_panel_password || '';
+            if (apiMonitorAdminTokenInput) apiMonitorAdminTokenInput.value = this.item.api_monitor_token_admin || '';
+            if (apiMonitorVisitorTokenInput) apiMonitorVisitorTokenInput.value = this.item.api_monitor_token_visitor || '';
             if (proxyInput) proxyInput.value = this.item.proxy_master_token || '';
             if (cleanupEnabledInput) cleanupEnabledInput.checked = !!this.item.log_cleanup_enabled;
             if (cleanupSizeInput) cleanupSizeInput.value = this.item.log_max_size_mb ?? 500;
         },
 
         collectGeneralPayload() {
-            const apiMonitorToken = String(dom.byId('api-monitor-token')?.value || '').trim();
-            const adminPanelPassword = String(dom.byId('admin-panel-password')?.value || '').trim();
+            const apiMonitorTokenAdmin = String(dom.byId('api-monitor-token-admin')?.value || '').trim();
+            const apiMonitorTokenVisitor = String(dom.byId('api-monitor-token-visitor')?.value || '').trim();
             const token = String(dom.byId('proxy-master-token')?.value || '').trim();
             const cleanupEnabled = !!dom.byId('log-cleanup-enabled')?.checked;
             const maxMB = parseIntStrict(dom.byId('log-max-size-mb')?.value, 500);
 
-            if (!apiMonitorToken || apiMonitorToken.length > 256) {
-                throw new Error('api_monitor_token must be 1-256 chars');
+            if (!apiMonitorTokenAdmin || apiMonitorTokenAdmin.length > 256) {
+                throw new Error('api_monitor_token_admin must be 1-256 chars');
             }
-            if (!adminPanelPassword || adminPanelPassword.length > 256) {
-                throw new Error('admin_panel_password must be 1-256 chars');
+            if (apiMonitorTokenVisitor.length > 256) {
+                throw new Error('api_monitor_token_visitor must be <= 256 chars');
             }
             if (maxMB < 0 || maxMB > 102400) {
                 throw new Error('log_max_size_mb must be between 0 and 102400');
             }
 
             return {
-                api_monitor_token: apiMonitorToken,
-                admin_panel_password: adminPanelPassword,
+                api_monitor_token_admin: apiMonitorTokenAdmin,
+                api_monitor_token_visitor: apiMonitorTokenVisitor,
                 proxy_master_token: token,
                 log_cleanup_enabled: cleanupEnabled,
                 log_max_size_mb: maxMB
@@ -493,6 +543,184 @@
             }
         },
 
+        selectedModelCount(channel) {
+            const selected = Array.isArray(channel?.selected_models) ? channel.selected_models : [];
+            return selected.length;
+        },
+
+        renderChannelModelsList() {
+            const list = dom.byId('channel-models-list');
+            const empty = dom.byId('channel-models-empty');
+            if (!list || !empty) return;
+            list.innerHTML = '';
+            if (!Array.isArray(this.modelSelectionAvailable) || this.modelSelectionAvailable.length === 0) {
+                empty.classList.remove('hidden');
+                list.classList.add('hidden');
+                this.updateChannelModelsMeta();
+                return;
+            }
+            empty.classList.add('hidden');
+            list.classList.remove('hidden');
+            for (const item of this.modelSelectionAvailable) {
+                const model = String(item?.model || '').trim();
+                if (!model) continue;
+                const protocol = String(item?.protocol || '').trim();
+                const success = !!item?.success;
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/40';
+                row.innerHTML = `
+                    <div class="min-w-0">
+                        <div class="text-sm font-medium text-zinc-800 dark:text-zinc-100 truncate">${esc(model)}</div>
+                        <div class="text-[11px] text-zinc-500 mt-0.5">
+                            ${esc(protocol || '--')} ${success ? '· Last OK' : '· Last Fail'}
+                        </div>
+                    </div>
+                    <label class="visitor-switch visitor-switch--compact cursor-pointer select-none">
+                        <input type="checkbox" data-model-checkbox data-model="${esc(model)}" ${this.modelSelectionChecked.has(model) ? 'checked' : ''}>
+                        <span class="visitor-switch-track">
+                            <span class="visitor-switch-on">ON</span>
+                            <span class="visitor-switch-off">OFF</span>
+                            <span class="visitor-switch-thumb"></span>
+                        </span>
+                    </label>
+                `;
+                list.appendChild(row);
+            }
+            this.updateChannelModelsMeta();
+        },
+        updateChannelModelsMeta() {
+            const meta = dom.byId('channel-models-meta');
+            if (!meta) return;
+            const channel = this.channels.find((c) => Number(c.id) === Number(this.modelSelectingChannelId));
+            const selected = this.modelSelectionChecked.size;
+            const total = Array.isArray(this.modelSelectionAvailable) ? this.modelSelectionAvailable.length : 0;
+            const channelName = channel?.name ? (channel.name + ' · ') : '';
+            meta.textContent = `${channelName}Selected ${selected} / ${total}`;
+        },
+
+        setChannelModelsError(message) {
+            const box = dom.byId('channel-models-error');
+            if (!box) return;
+            if (!message) {
+                box.classList.add('hidden');
+                box.textContent = '';
+                return;
+            }
+            box.classList.remove('hidden');
+            box.textContent = message;
+        },
+
+        toggleAllChannelModels(checked) {
+            const list = dom.byId('channel-models-list');
+            if (!list) return;
+            const cbs = list.querySelectorAll('input[data-model-checkbox]');
+            this.modelSelectionChecked.clear();
+            cbs.forEach((cb) => {
+                cb.checked = !!checked;
+                const model = String(cb.dataset.model || '').trim();
+                if (checked && model) {
+                    this.modelSelectionChecked.add(model);
+                }
+            });
+            this.updateChannelModelsMeta();
+        },
+
+        selectLastOKModels() {
+            const list = dom.byId('channel-models-list');
+            if (!list) return;
+            const lastOK = new Set(
+                (Array.isArray(this.modelSelectionAvailable) ? this.modelSelectionAvailable : [])
+                    .filter((item) => !!item?.success)
+                    .map((item) => String(item?.model || '').trim())
+                    .filter(Boolean)
+            );
+            const cbs = list.querySelectorAll('input[data-model-checkbox]');
+            this.modelSelectionChecked.clear();
+            cbs.forEach((cb) => {
+                const model = String(cb.dataset.model || '').trim();
+                const checked = model !== '' && lastOK.has(model);
+                cb.checked = checked;
+                if (checked) {
+                    this.modelSelectionChecked.add(model);
+                }
+            });
+            this.updateChannelModelsMeta();
+        },
+        async openChannelModelsModal(channelID) {
+            const channel = this.channels.find((c) => Number(c.id) === Number(channelID));
+            if (!channel) return;
+            this.modelSelectingChannelId = Number(channelID);
+            this.modelSelectionAvailable = [];
+            this.modelSelectionChecked = new Set();
+            this.setChannelModelsError('');
+
+            const modal = dom.byId('channel-models-modal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            }
+            const meta = dom.byId('channel-models-meta');
+            if (meta) {
+                meta.textContent = 'Loading...';
+            }
+
+            try {
+                const data = await apiJSON(`/api/admin/channels/${channelID}/models`);
+                const item = data.item || {};
+                this.modelSelectionAvailable = Array.isArray(item.available_models) ? item.available_models : [];
+                const selected = Array.isArray(item.selected_models) ? item.selected_models : [];
+                this.modelSelectionChecked = new Set(selected.map((s) => String(s || '').trim()).filter(Boolean));
+                this.renderChannelModelsList();
+            } catch (err) {
+                this.modelSelectionAvailable = [];
+                this.modelSelectionChecked = new Set();
+                this.renderChannelModelsList();
+                this.setChannelModelsError(err.message || 'Failed to load channel models');
+            }
+        },
+
+        closeChannelModelsModal() {
+            const modal = dom.byId('channel-models-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+            this.modelSelectingChannelId = null;
+            this.modelSelectionAvailable = [];
+            this.modelSelectionChecked = new Set();
+            this.setChannelModelsError('');
+        },
+
+        async saveChannelModelsSelection() {
+            const channelID = this.modelSelectingChannelId;
+            if (!channelID) return;
+            const saveButtonId = 'channel-models-save-btn';
+            this.setBusy([saveButtonId], true, { [saveButtonId]: 'Saving...' });
+            this.setChannelModelsError('');
+            try {
+                const selectedModels = Array.from(this.modelSelectionChecked);
+                const data = await apiJSON(`/api/admin/channels/${channelID}/models`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ selected_models: selectedModels })
+                });
+                const item = data.item || null;
+                if (item) {
+                    this.channels = this.channels.map((ch) => (Number(ch.id) === Number(item.id) ? item : ch));
+                    this.renderChannels();
+                } else {
+                    await this.loadChannels();
+                }
+                this.closeChannelModelsModal();
+                showAlert('success', 'Channel model selection updated.');
+            } catch (err) {
+                const msg = err.message || 'Failed to save channel model selection';
+                this.setChannelModelsError(msg);
+                showAlert('error', msg);
+            } finally {
+                this.setBusy([saveButtonId], false);
+            }
+        },
+
         renderChannels() {
             const tbody = dom.byId('admin-channel-list-body');
             const empty = dom.byId('admin-channel-empty');
@@ -513,22 +741,37 @@
                         <div class="font-semibold text-zinc-800 dark:text-zinc-100">${esc(ch.name || '')}</div>
                         <div class="text-xs text-zinc-500 mt-1">${ch.enabled ? 'Enabled' : 'Disabled'}</div>
                     </td>
-                    <td class="px-4 py-3">
-                        <div class="font-mono text-xs text-zinc-600 dark:text-zinc-300 truncate max-w-[320px]" title="${esc(ch.base_url || '')}">
-                            ${esc(ch.base_url || '')}
-                        </div>
-                    </td>
                     <td class="px-4 py-3 text-zinc-600 dark:text-zinc-300">
                         ${esc(ch.interval_min ?? '--')} min
                     </td>
                     <td class="px-4 py-3 text-zinc-600 dark:text-zinc-300">
                         ${esc(ch.max_models ?? 0)}
                     </td>
+                    <td class="px-4 py-3">
+                        <button type="button" data-action="select-models" data-id="${esc(ch.id)}"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                            <i class="ph-bold ph-list-checks"></i>
+                            Models
+                        </button>
+                        <div class="text-[11px] text-zinc-500 mt-1">
+                            ${this.selectedModelCount(ch) > 0 ? `${this.selectedModelCount(ch)} selected` : 'All models'}
+                        </div>
+                    </td>
+                    <td class="px-4 py-3">
+                        <label class="visitor-switch cursor-pointer select-none">
+                            <input type="checkbox" data-action="toggle-visitor-actions" data-id="${esc(ch.id)}" ${ch.visitor_channel_actions_enabled ? 'checked' : ''}>
+                            <span class="visitor-switch-track">
+                                <span class="visitor-switch-on">ON</span>
+                                <span class="visitor-switch-off">OFF</span>
+                                <span class="visitor-switch-thumb"></span>
+                            </span>
+                        </label>
+                    </td>
                     <td class="px-4 py-3 text-right">
                         <button type="button" data-action="edit-advanced" data-id="${esc(ch.id)}"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors">
                             <i class="ph-bold ph-sliders"></i>
-                            Edit Advanced
+                            Edit
                         </button>
                     </td>
                 `;
@@ -547,6 +790,27 @@
                 showAlert('error', err.message || 'Failed to load channels');
             } finally {
                 this.setBusy(['refresh-channels-btn'], false);
+            }
+        },
+
+        async setChannelVisitorActions(channelID, enabled, sourceEl) {
+            try {
+                const data = await apiJSON(`/api/admin/channels/${channelID}/advanced`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ visitor_channel_actions_enabled: !!enabled })
+                });
+                const item = data.item || null;
+                if (item) {
+                    this.channels = this.channels.map((ch) => (Number(ch.id) === Number(item.id) ? item : ch));
+                    this.renderChannels();
+                } else {
+                    await this.loadChannels();
+                }
+            } catch (err) {
+                if (sourceEl) {
+                    sourceEl.checked = !enabled;
+                }
+                showAlert('error', err.message || 'Failed to update visitor actions setting');
             }
         },
 
@@ -674,3 +938,5 @@
         }
     });
 })();
+
+

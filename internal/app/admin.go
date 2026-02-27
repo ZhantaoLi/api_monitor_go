@@ -159,7 +159,7 @@ func clearAdminSessionCookie(w http.ResponseWriter) {
 func adminPageMiddleware(admin *AdminSessionManager, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if admin == nil || !admin.Enabled() {
-			http.Error(w, "admin panel is disabled: set ADMIN_PANEL_PASSWORD (or API_MONITOR_TOKEN)", http.StatusServiceUnavailable)
+			http.Error(w, "admin panel is disabled: set API_MONITOR_TOKEN_ADMIN", http.StatusServiceUnavailable)
 			return
 		}
 		token := adminSessionTokenFromRequest(r)
@@ -214,18 +214,23 @@ type adminLoginRequest struct {
 }
 
 type adminSettingsPatchRequest struct {
-	APIMonitorToken    *string `json:"api_monitor_token"`
-	AdminPanelPassword *string `json:"admin_panel_password"`
-	ProxyMasterToken   *string `json:"proxy_master_token"`
-	LogCleanupEnabled  *bool   `json:"log_cleanup_enabled"`
-	LogMaxSizeMB       *int    `json:"log_max_size_mb"`
+	APIMonitorTokenAdmin   *string `json:"api_monitor_token_admin"`
+	APIMonitorTokenVisitor *string `json:"api_monitor_token_visitor"`
+	ProxyMasterToken       *string `json:"proxy_master_token"`
+	LogCleanupEnabled      *bool   `json:"log_cleanup_enabled"`
+	LogMaxSizeMB           *int    `json:"log_max_size_mb"`
 }
 
 type adminChannelAdvancedPatchRequest struct {
-	VerifySSL        *bool   `json:"verify_ssl"`
-	Prompt           *string `json:"prompt"`
-	AnthropicVersion *string `json:"anthropic_version"`
-	MaxModels        *int    `json:"max_models"`
+	VerifySSL                    *bool   `json:"verify_ssl"`
+	Prompt                       *string `json:"prompt"`
+	AnthropicVersion             *string `json:"anthropic_version"`
+	MaxModels                    *int    `json:"max_models"`
+	VisitorChannelActionsEnabled *bool   `json:"visitor_channel_actions_enabled"`
+}
+
+type adminChannelModelsPatchRequest struct {
+	SelectedModels []string `json:"selected_models"`
 }
 
 func adminChannelItem(t *Target) map[string]any {
@@ -233,18 +238,20 @@ func adminChannelItem(t *Target) map[string]any {
 		return map[string]any{}
 	}
 	return map[string]any{
-		"id":                t.ID,
-		"name":              t.Name,
-		"base_url":          t.BaseURL,
-		"enabled":           t.Enabled,
-		"interval_min":      t.IntervalMin,
-		"timeout_s":         t.TimeoutS,
-		"verify_ssl":        t.VerifySSL,
-		"prompt":            t.Prompt,
-		"anthropic_version": t.AnthropicVersion,
-		"max_models":        t.MaxModels,
-		"source_url":        t.SourceURL,
-		"updated_at":        t.UpdatedAt,
+		"id":                              t.ID,
+		"name":                            t.Name,
+		"base_url":                        t.BaseURL,
+		"enabled":                         t.Enabled,
+		"interval_min":                    t.IntervalMin,
+		"timeout_s":                       t.TimeoutS,
+		"verify_ssl":                      t.VerifySSL,
+		"prompt":                          t.Prompt,
+		"anthropic_version":               t.AnthropicVersion,
+		"max_models":                      t.MaxModels,
+		"visitor_channel_actions_enabled": t.VisitorChannelActionsEnabled,
+		"selected_models":                 t.SelectedModels,
+		"source_url":                      t.SourceURL,
+		"updated_at":                      t.UpdatedAt,
 	}
 }
 
@@ -262,11 +269,11 @@ func (h *Handlers) loadAdminSettings() (map[string]any, error) {
 	proxyMasterToken := strings.TrimSpace(settings[settingProxyMasterToken])
 
 	return map[string]any{
-		"api_monitor_token":    getAuthToken(),
-		"admin_panel_password": h.admin.Password(),
-		"proxy_master_token":   proxyMasterToken,
-		"log_cleanup_enabled":  cleanupEnabled,
-		"log_max_size_mb":      cleanupMaxMB,
+		"api_monitor_token_admin":   getAdminAuthToken(),
+		"api_monitor_token_visitor": getVisitorAuthToken(),
+		"proxy_master_token":        proxyMasterToken,
+		"log_cleanup_enabled":       cleanupEnabled,
+		"log_max_size_mb":           cleanupMaxMB,
 	}, nil
 }
 
@@ -276,6 +283,11 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"detail": "admin panel is disabled"})
 		return
 	}
+	clientIP := clientIPFromRequest(r)
+	if blocked, retryAfter := globalAuthFailureProtector.IsBlocked(authFailureScopeLogin, clientIP); blocked {
+		writeBlockedAuthResponse(w, retryAfter)
+		return
+	}
 	var req adminLoginRequest
 	if err := readJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
@@ -283,9 +295,11 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	token, ok := h.admin.Login(strings.TrimSpace(req.Password))
 	if !ok {
+		globalAuthFailureProtector.RecordFailure(authFailureScopeLogin, clientIP)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"detail": "invalid password"})
 		return
 	}
+	globalAuthFailureProtector.Clear(authFailureScopeLogin, clientIP)
 	setAdminSessionCookie(w, token, 24*time.Hour)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -317,32 +331,33 @@ func (h *Handlers) AdminPatchSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.APIMonitorToken != nil {
-		token := strings.TrimSpace(*req.APIMonitorToken)
+	if req.APIMonitorTokenAdmin != nil {
+		token := strings.TrimSpace(*req.APIMonitorTokenAdmin)
 		if token == "" || len(token) > 256 {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "api_monitor_token must be 1-256 chars"})
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "api_monitor_token_admin must be 1-256 chars"})
 			return
 		}
 		if err := h.db.SetSetting(settingRuntimeAPIToken, token); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
 			return
 		}
-		setAuthToken(token)
+		if h.admin != nil {
+			h.admin.UpdatePassword(token, adminSessionTokenFromRequest(r))
+		}
+		setAuthTokens(token, getVisitorAuthToken())
 	}
 
-	if req.AdminPanelPassword != nil {
-		password := strings.TrimSpace(*req.AdminPanelPassword)
-		if password == "" || len(password) > 256 {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "admin_panel_password must be 1-256 chars"})
+	if req.APIMonitorTokenVisitor != nil {
+		token := strings.TrimSpace(*req.APIMonitorTokenVisitor)
+		if len(token) > 256 {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "api_monitor_token_visitor must be <= 256 chars"})
 			return
 		}
-		if err := h.db.SetSetting(settingRuntimeAdminPassword, password); err != nil {
+		if err := h.db.SetSetting(settingRuntimeVisitorAPIToken, token); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
 			return
 		}
-		if h.admin != nil {
-			h.admin.UpdatePassword(password, adminSessionTokenFromRequest(r))
-		}
+		setAuthTokens(getAdminAuthToken(), token)
 	}
 
 	if req.ProxyMasterToken != nil {
@@ -375,6 +390,7 @@ func (h *Handlers) AdminPatchSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	h.monitor.UpdateLogCleanupConfig(cleanupEnabled, cleanupMaxMB)
 
 	item, err := h.loadAdminSettings()
@@ -437,6 +453,9 @@ func (h *Handlers) AdminPatchChannelAdvanced(w http.ResponseWriter, r *http.Requ
 	if req.MaxModels != nil {
 		updates["max_models"] = *req.MaxModels
 	}
+	if req.VisitorChannelActionsEnabled != nil {
+		updates["visitor_channel_actions_enabled"] = *req.VisitorChannelActionsEnabled
+	}
 	if len(updates) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "no advanced fields provided"})
 		return
@@ -446,6 +465,89 @@ func (h *Handlers) AdminPatchChannelAdvanced(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	updated, err := h.db.UpdateTarget(id, updates)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
+		return
+	}
+	if updated == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "item": adminChannelItem(updated)})
+}
+
+// AdminGetChannelModels handles GET /api/admin/channels/{id}/models
+func (h *Handlers) AdminGetChannelModels(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid id"})
+		return
+	}
+	target, err := h.db.GetTarget(id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+		return
+	}
+	if target == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
+		return
+	}
+
+	statuses, err := h.db.GetLatestModelStatuses(id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+		return
+	}
+	items := make([]map[string]any, 0, len(statuses))
+	for i := range statuses {
+		items = append(items, map[string]any{
+			"model":    statuses[i].Model,
+			"protocol": statuses[i].Protocol,
+			"success":  statuses[i].Success,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"item": map[string]any{
+			"target_id":        target.ID,
+			"target_name":      target.Name,
+			"selected_models":  target.SelectedModels,
+			"available_models": items,
+		},
+	})
+}
+
+// AdminPatchChannelModels handles PATCH /api/admin/channels/{id}/models
+func (h *Handlers) AdminPatchChannelModels(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid id"})
+		return
+	}
+
+	target, err := h.db.GetTarget(id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+		return
+	}
+	if target == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
+		return
+	}
+
+	var req adminChannelModelsPatchRequest
+	if err := readJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
+		return
+	}
+	updates := map[string]any{
+		"selected_models": req.SelectedModels,
+	}
+	if err := validateTargetPayload(updates); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
+		return
+	}
 	updated, err := h.db.UpdateTarget(id, updates)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})

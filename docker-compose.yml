@@ -13,7 +13,8 @@ services:
       # Optional knobs for low-resource servers (default values: 3 / 2)
       # - MONITOR_DETECT_CONCURRENCY=1
       # - MONITOR_MAX_PARALLEL_TARGETS=1
-      - API_MONITOR_TOKEN=${API_MONITOR_TOKEN:-}
-      - ADMIN_PANEL_PASSWORD=${ADMIN_PANEL_PASSWORD:-}
+      - API_MONITOR_TOKEN_ADMIN=${API_MONITOR_TOKEN_ADMIN:-}
+      # Visitor token is optional; keep empty to disable visitor token auth
+      - API_MONITOR_TOKEN_VISITOR=${API_MONITOR_TOKEN_VISITOR:-}
     volumes:
       - ./data:/app/data
