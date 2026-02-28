@@ -46,6 +46,13 @@ func NewDatabase(path string) (*Database, error) {
 	return db, nil
 }
 
+// Close closes the underlying database connection.
+func (d *Database) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.conn.Close()
+}
+
 // InitDB creates tables and indices if they don't exist.
 func (d *Database) InitDB() error {
 	conn := d.conn
@@ -376,6 +383,20 @@ type ModelHistoryPoint struct {
 }
 
 // ---------------------------------------------------------------------------
+// 查询列名常量（顺序严格对齐 scan 函数）
+// ---------------------------------------------------------------------------
+
+const targetColumns = `id, name, base_url, api_key, enabled, interval_min, timeout_s, verify_ssl,
+	prompt, anthropic_version, max_models, created_at, updated_at,
+	last_run_at, last_status, last_total, last_success, last_fail, last_log_file, last_error,
+	source_url, sort_order, visitor_channel_actions_enabled, selected_models`
+
+const runColumns = `id, target_id, started_at, finished_at, status, total, success, fail, log_file, error`
+
+const runModelColumns = `id, run_id, target_id, protocol, model, stream, duration, success, transport_success,
+	tool_calls_count, tool_calls, content, timestamp, error, status_code, route, endpoint`
+
+// ---------------------------------------------------------------------------
 // Scan helpers
 // ---------------------------------------------------------------------------
 
@@ -456,7 +477,7 @@ func (d *Database) ListTargets() ([]Target, error) {
 	conn := d.conn
 
 	rows, err := conn.Query(`
-		SELECT * FROM targets
+		SELECT ` + targetColumns + ` FROM targets
 		ORDER BY created_at DESC, id DESC
 	`)
 	if err != nil {
@@ -482,7 +503,7 @@ func (d *Database) ListTargets() ([]Target, error) {
 func (d *Database) GetTarget(targetID int) (*Target, error) {
 	conn := d.conn
 
-	row := conn.QueryRow("SELECT * FROM targets WHERE id = ?", targetID)
+	row := conn.QueryRow("SELECT "+targetColumns+" FROM targets WHERE id = ?", targetID)
 	t, err := scanTarget(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -608,7 +629,7 @@ func (d *Database) ListDueTargets(nowTS float64) ([]Target, error) {
 	conn := d.conn
 
 	rows, err := conn.Query(`
-		SELECT * FROM targets
+		SELECT `+targetColumns+` FROM targets
 		WHERE enabled = 1
 		AND (
 			last_run_at IS NULL
@@ -858,7 +879,7 @@ func (d *Database) UpdateTargetAfterRun(targetID int, lastRunAt float64, lastSta
 }
 
 // InsertModelRows bulk-inserts detection results.
-func (d *Database) InsertModelRows(runID, targetID int, rows []map[string]any) error {
+func (d *Database) InsertModelRows(runID, targetID int, rows []DetectionResult) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -886,19 +907,19 @@ func (d *Database) InsertModelRows(runID, targetID int, rows []map[string]any) e
 	for _, row := range rows {
 		_, err = stmt.Exec(
 			runID, targetID,
-			row["protocol"], row["model"],
-			boolToInt(boolFromAny(row["stream"], false)),
-			row["duration"],
-			boolToInt(boolFromAny(row["success"], false)),
-			boolToInt(boolFromAny(row["transport_success"], false)),
-			intFromAny(row["tool_calls_count"], 0),
-			stringFromAny(row["tool_calls_json"], "[]"),
-			stringFromAny(row["content"], ""),
-			row["timestamp"],
-			row["error"],
-			row["status_code"],
-			row["route"],
-			row["endpoint"],
+			row.Protocol, row.Model,
+			boolToInt(row.Stream),
+			row.Duration,
+			boolToInt(row.Success),
+			boolToInt(row.TransportSuccess),
+			row.ToolCallsCount,
+			row.ToolCalls,
+			row.Content,
+			row.Timestamp,
+			row.Error,
+			row.StatusCode,
+			row.Route,
+			row.Endpoint,
 		)
 		if err != nil {
 			tx.Rollback()
@@ -917,7 +938,7 @@ func (d *Database) ListRuns(targetID, limit int) ([]Run, error) {
 	conn := d.conn
 
 	rows, err := conn.Query(`
-		SELECT * FROM runs WHERE target_id = ?
+		SELECT `+runColumns+` FROM runs WHERE target_id = ?
 		ORDER BY started_at DESC, id DESC LIMIT ?`, targetID, limit)
 	if err != nil {
 		return nil, err
@@ -943,7 +964,7 @@ func (d *Database) GetLatestRun(targetID int) (*Run, error) {
 	conn := d.conn
 
 	row := conn.QueryRow(`
-		SELECT * FROM runs WHERE target_id = ?
+		SELECT `+runColumns+` FROM runs WHERE target_id = ?
 		ORDER BY started_at DESC, id DESC LIMIT 1`, targetID)
 	r, err := scanRun(row)
 	if err == sql.ErrNoRows {
@@ -955,7 +976,7 @@ func (d *Database) GetLatestRun(targetID int) (*Run, error) {
 // GetRun returns a specific run by target and run id.
 func (d *Database) GetRun(targetID, runID int) (*Run, error) {
 	row := d.conn.QueryRow(
-		"SELECT * FROM runs WHERE target_id = ? AND id = ?",
+		"SELECT "+runColumns+" FROM runs WHERE target_id = ? AND id = ?",
 		targetID, runID,
 	)
 	r, err := scanRun(row)
@@ -969,7 +990,7 @@ func (d *Database) GetRun(targetID, runID int) (*Run, error) {
 func (d *Database) ListLogs(targetID int, runID *int, limit int) ([]ModelRow, error) {
 	conn := d.conn
 
-	query := "SELECT * FROM run_models WHERE target_id = ?"
+	query := "SELECT " + runModelColumns + " FROM run_models WHERE target_id = ?"
 	args := []any{targetID}
 
 	if runID != nil {

@@ -251,6 +251,11 @@
             this.bindVisibilityToggle('toggle-proxy-token-btn', 'proxy-master-token');
             this.bindChannelModalControls();
 
+            const visitorModeToggle = dom.byId('visitor-mode-toggle');
+            if (visitorModeToggle) {
+                visitorModeToggle.addEventListener('change', () => this.updateVisitorModeUI(visitorModeToggle.checked));
+            }
+
             const saveGeneralBtn = dom.byId('save-general-btn');
             const logoutBtn = dom.byId('logout-btn');
             const randomProxyTokenBtn = dom.byId('random-proxy-token-btn');
@@ -473,20 +478,37 @@
 
             const apiMonitorAdminTokenInput = dom.byId('api-monitor-token-admin');
             const apiMonitorVisitorTokenInput = dom.byId('api-monitor-token-visitor');
+            const visitorModeToggle = dom.byId('visitor-mode-toggle');
             const proxyInput = dom.byId('proxy-master-token');
             const cleanupEnabledInput = dom.byId('log-cleanup-enabled');
             const cleanupSizeInput = dom.byId('log-max-size-mb');
 
             if (apiMonitorAdminTokenInput) apiMonitorAdminTokenInput.value = this.item.api_monitor_token_admin || '';
             if (apiMonitorVisitorTokenInput) apiMonitorVisitorTokenInput.value = this.item.api_monitor_token_visitor || '';
+            if (visitorModeToggle) {
+                visitorModeToggle.checked = !!this.item.visitor_mode_enabled;
+                this.updateVisitorModeUI(visitorModeToggle.checked);
+            }
             if (proxyInput) proxyInput.value = this.item.proxy_master_token || '';
             if (cleanupEnabledInput) cleanupEnabledInput.checked = !!this.item.log_cleanup_enabled;
             if (cleanupSizeInput) cleanupSizeInput.value = this.item.log_max_size_mb ?? 500;
         },
 
+        updateVisitorModeUI(enabled) {
+            const label = dom.byId('visitor-mode-label');
+            const tokenSection = dom.byId('visitor-token-section');
+            const disabledHint = dom.byId('visitor-disabled-hint');
+            if (label) label.textContent = enabled ? 'Enabled' : 'Disabled';
+            if (tokenSection) tokenSection.classList.toggle('hidden', !enabled);
+            if (disabledHint) disabledHint.classList.toggle('hidden', enabled);
+        },
+
         collectGeneralPayload() {
             const apiMonitorTokenAdmin = String(dom.byId('api-monitor-token-admin')?.value || '').trim();
-            const apiMonitorTokenVisitor = String(dom.byId('api-monitor-token-visitor')?.value || '').trim();
+            const visitorModeEnabled = !!dom.byId('visitor-mode-toggle')?.checked;
+            const apiMonitorTokenVisitor = visitorModeEnabled
+                ? String(dom.byId('api-monitor-token-visitor')?.value || '').trim()
+                : '';
             const token = String(dom.byId('proxy-master-token')?.value || '').trim();
             const cleanupEnabled = !!dom.byId('log-cleanup-enabled')?.checked;
             const maxMB = parseIntStrict(dom.byId('log-max-size-mb')?.value, 500);
@@ -504,6 +526,7 @@
             return {
                 api_monitor_token_admin: apiMonitorTokenAdmin,
                 api_monitor_token_visitor: apiMonitorTokenVisitor,
+                visitor_mode_enabled: visitorModeEnabled,
                 proxy_master_token: token,
                 log_cleanup_enabled: cleanupEnabled,
                 log_max_size_mb: maxMB

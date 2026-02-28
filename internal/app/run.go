@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -8,9 +9,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -101,6 +104,19 @@ func resolveOptionalRuntimeSecret(db *Database, envName, settingKey string) (str
 	return "", false, nil
 }
 
+// serveEmbeddedHTML 返回一个从嵌入文件系统中读取并响应 HTML 文件的处理器。
+func serveEmbeddedHTML(webFS fs.FS, filePath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := fs.ReadFile(webFS, filePath)
+		if err != nil {
+			http.Error(w, "not found", 404)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(data)
+	}
+}
+
 func Start(webFS fs.FS) {
 	// ---- Config from environment ----
 	dataDir := os.Getenv("DATA_DIR")
@@ -141,6 +157,9 @@ func Start(webFS fs.FS) {
 	if err := db.EnsureSettingDefault(settingProxyMasterToken, proxyMasterTokenDefault); err != nil {
 		log.Fatalf("settings init failed: %v", err)
 	}
+	if err := db.EnsureSettingDefault(settingVisitorModeEnabled, "true"); err != nil {
+		log.Fatalf("settings init failed: %v", err)
+	}
 	runtimeAdminAPIToken, adminTokenGenerated, err := resolveRuntimeSecret(
 		db,
 		"API_MONITOR_TOKEN_ADMIN",
@@ -164,6 +183,7 @@ func Start(webFS fs.FS) {
 	settingValues, err := db.GetSettings([]string{
 		settingLogCleanupEnabled,
 		settingLogMaxSizeMB,
+		settingVisitorModeEnabled,
 	})
 	if err != nil {
 		log.Fatalf("settings load failed: %v", err)
@@ -173,6 +193,8 @@ func Start(webFS fs.FS) {
 	if logMaxSizeMB < 0 {
 		logMaxSizeMB = 0
 	}
+	visitorModeEnabled := parseBoolString(settingValues[settingVisitorModeEnabled], true)
+	setVisitorModeEnabled(visitorModeEnabled)
 	log.Printf("[main] database opened: %s", dbPath)
 
 	// ---- Monitor Service ----
@@ -191,7 +213,6 @@ func Start(webFS fs.FS) {
 		bus.Publish(eventType, data)
 	})
 	monitor.Start()
-	defer monitor.Stop()
 
 	log.Printf("[main] log cleanup config enabled=%v max_mb=%d", logCleanupEnabled, logMaxSizeMB)
 	log.Println("[main] auth=enabled")
@@ -200,7 +221,13 @@ func Start(webFS fs.FS) {
 		log.Println("[main] save this token now; it is required for write operations and /admin/login")
 	}
 	if runtimeVisitorAPIToken == "" {
-		log.Println("[main] API_MONITOR_TOKEN_VISITOR is empty: visitor token auth is disabled")
+		if visitorModeEnabled {
+			log.Println("[main] visitor mode=enabled (anonymous access, no token required)")
+		} else {
+			log.Println("[main] visitor mode=disabled")
+		}
+	} else {
+		log.Println("[main] visitor mode=enabled (token required)")
 	}
 
 	adminSessions := NewAdminSessionManager(runtimeAdminAPIToken, 24*time.Hour)
@@ -235,55 +262,14 @@ func Start(webFS fs.FS) {
 		w.Write(data)
 	})
 
-	mux.HandleFunc("GET /viewer.html", func(w http.ResponseWriter, r *http.Request) {
-		data, err := fs.ReadFile(webFS, "web/log_viewer.html")
-		if err != nil {
-			http.Error(w, "not found", 404)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
-	})
-
-	mux.HandleFunc("GET /analysis.html", func(w http.ResponseWriter, r *http.Request) {
-		data, err := fs.ReadFile(webFS, "web/analysis.html")
-		if err != nil {
-			http.Error(w, "not found", 404)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
-	})
-	mux.HandleFunc("GET /admin/login", func(w http.ResponseWriter, r *http.Request) {
-		data, err := fs.ReadFile(webFS, "web/admin_login.html")
-		if err != nil {
-			http.Error(w, "not found", 404)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
-	})
-	mux.Handle("GET /admin.html", adminPageMiddleware(adminSessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		data, err := fs.ReadFile(webFS, "web/admin.html")
-		if err != nil {
-			http.Error(w, "not found", 404)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
-	})))
+	mux.HandleFunc("GET /viewer.html", serveEmbeddedHTML(webFS, "web/log_viewer.html"))
+	mux.HandleFunc("GET /analysis.html", serveEmbeddedHTML(webFS, "web/analysis.html"))
+	mux.HandleFunc("GET /admin/login", serveEmbeddedHTML(webFS, "web/admin_login.html"))
+	mux.Handle("GET /admin.html", adminPageMiddleware(adminSessions, serveEmbeddedHTML(webFS, "web/admin.html")))
 	mux.Handle("GET /admin", adminPageMiddleware(adminSessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin.html", http.StatusFound)
 	})))
-	mux.HandleFunc("GET /docs/proxy", func(w http.ResponseWriter, r *http.Request) {
-		data, err := fs.ReadFile(webFS, "web/proxy_docs.html")
-		if err != nil {
-			http.Error(w, "not found", 404)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
-	})
+	mux.HandleFunc("GET /docs/proxy", serveEmbeddedHTML(webFS, "web/proxy_docs.html"))
 
 	// Static assets (CSS, JS, fonts, etc.)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(webContent))))
@@ -305,6 +291,8 @@ func Start(webFS fs.FS) {
 	mux.Handle("POST /api/targets/{id}/run", authAnyMiddleware(http.HandlerFunc(h.RunTarget)))
 	mux.Handle("GET /api/targets/{id}/runs", authAnyMiddleware(http.HandlerFunc(h.ListRuns)))
 	mux.Handle("GET /api/targets/{id}/logs", authAnyMiddleware(http.HandlerFunc(h.GetLogs)))
+	mux.Handle("GET /api/targets/{id}/models", authAnyMiddleware(http.HandlerFunc(h.GetTargetModels)))
+	mux.Handle("PATCH /api/targets/{id}/models", authAnyMiddleware(http.HandlerFunc(h.PatchTargetModels)))
 	mux.Handle("GET /api/proxy/keys", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.ListProxyKeys)))
 	mux.Handle("POST /api/proxy/keys", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.CreateProxyKey)))
 	mux.Handle("DELETE /api/proxy/keys/{id}", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.RevokeProxyKey)))
@@ -326,8 +314,50 @@ func Start(webFS fs.FS) {
 
 	// ---- Start Server ----
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
-	log.Printf("[main] api_monitor started on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("server error: %v", err)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	go func() {
+		log.Printf("[main] api_monitor started on %s", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("[main] shutdown signal received, stopping...")
+
+	// 1. Stop scheduler so no new detections are triggered
+	log.Println("[main] stopping monitor scheduler...")
+	monitor.StopScheduler()
+
+	// 2. Close SSE bus to disconnect all SSE clients
+	log.Println("[main] closing SSE connections...")
+	bus.Close()
+
+	// 3. Shutdown HTTP server (now quick since SSE clients are gone)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("[main] HTTP server shutdown error: %v", err)
+	} else {
+		log.Println("[main] HTTP server stopped")
+	}
+
+	// 4. Wait for in-flight detections to finish
+	log.Println("[main] waiting for running detections to finish...")
+	monitor.WaitDetections()
+
+	// 5. Close database
+	log.Println("[main] closing database...")
+	if err := db.Close(); err != nil {
+		log.Printf("[main] database close error: %v", err)
+	}
+
+	log.Println("[main] shutdown completed")
 }

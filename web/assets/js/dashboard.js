@@ -13,6 +13,16 @@ function dashboard() {
         formError: '',
         authRole: 'visitor',
 
+        // Model Selection state
+        modelModalOpen: false,
+        modelModalLoading: false,
+        modelModalSaving: false,
+        modelModalError: '',
+        modelModalMeta: '',
+        modelSelectingId: null,
+        modelAvailable: [],
+        modelChecked: new Set(),
+
         defaultForm: {
             name: '', base_url: '', api_key: '', source_url: '',
             interval_min: 30, timeout_s: 30
@@ -423,6 +433,106 @@ function dashboard() {
                 this.targets.splice(toIndex, 0, item);
             }
             this.dragSourceId = null;
+        },
+
+        // Model Selection methods
+        async openModelSelection(targetId) {
+            const t = this.targets.find(x => x.id === targetId);
+            if (!t) return;
+            this.modelSelectingId = targetId;
+            this.modelAvailable = [];
+            this.modelChecked = new Set();
+            this.modelModalError = '';
+            this.modelModalMeta = 'Loading...';
+            this.modelModalLoading = true;
+            this.modelModalOpen = true;
+
+            try {
+                const res = await Utils.authFetch(`/api/targets/${targetId}/models`);
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Failed to load models');
+                }
+                const data = await res.json();
+                const item = data.item || {};
+                this.modelAvailable = Array.isArray(item.available_models) ? item.available_models : [];
+                const selected = Array.isArray(item.selected_models) ? item.selected_models : [];
+                this.modelChecked = new Set(selected.map(s => String(s || '').trim()).filter(Boolean));
+                this.updateModelMeta();
+            } catch (err) {
+                this.modelAvailable = [];
+                this.modelChecked = new Set();
+                this.modelModalError = err.message || 'Failed to load models';
+            } finally {
+                this.modelModalLoading = false;
+            }
+        },
+
+        closeModelModal() {
+            this.modelModalOpen = false;
+            this.modelSelectingId = null;
+            this.modelAvailable = [];
+            this.modelChecked = new Set();
+            this.modelModalError = '';
+        },
+
+        toggleModelCheck(model, checked) {
+            if (checked) {
+                this.modelChecked.add(model);
+            } else {
+                this.modelChecked.delete(model);
+            }
+            // Force Alpine reactivity
+            this.modelChecked = new Set(this.modelChecked);
+            this.updateModelMeta();
+        },
+
+        modelSelectAll(checked) {
+            if (checked) {
+                this.modelChecked = new Set(this.modelAvailable.map(m => m.model));
+            } else {
+                this.modelChecked = new Set();
+            }
+            this.updateModelMeta();
+        },
+
+        modelSelectLastOK() {
+            this.modelChecked = new Set(
+                this.modelAvailable.filter(m => m.success).map(m => m.model)
+            );
+            this.updateModelMeta();
+        },
+
+        updateModelMeta() {
+            const selected = this.modelChecked.size;
+            const total = this.modelAvailable.length;
+            this.modelModalMeta = selected === 0
+                ? `${total} models available (all will be detected)`
+                : `${selected} / ${total} models selected`;
+        },
+
+        async saveModelSelection() {
+            if (!this.modelSelectingId) return;
+            this.modelModalSaving = true;
+            this.modelModalError = '';
+            try {
+                const selectedModels = Array.from(this.modelChecked);
+                const res = await Utils.authFetch(`/api/targets/${this.modelSelectingId}/models`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ selected_models: selectedModels })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Failed to save');
+                }
+                this.closeModelModal();
+                this.loadData();
+            } catch (err) {
+                this.modelModalError = err.message || 'Failed to save model selection';
+            } finally {
+                this.modelModalSaving = false;
+            }
         }
     }
 }

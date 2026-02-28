@@ -370,6 +370,28 @@ func extractTextFromResponses(body any) string {
 }
 
 // ---------------------------------------------------------------------------
+// DetectionResult
+// ---------------------------------------------------------------------------
+
+// DetectionResult holds the typed outcome of a single model detection.
+type DetectionResult struct {
+	Protocol         string  `json:"protocol"`
+	Model            string  `json:"model"`
+	Stream           bool    `json:"stream"`
+	Duration         float64 `json:"duration"`
+	Success          bool    `json:"success"`
+	TransportSuccess bool    `json:"transport_success"`
+	ToolCallsCount   int     `json:"tool_calls_count"`
+	ToolCalls        string  `json:"tool_calls"`
+	Content          string  `json:"content"`
+	Timestamp        float64 `json:"timestamp"`
+	Error            *string `json:"error"`
+	StatusCode       *int    `json:"status_code"`
+	Route            string  `json:"route"`
+	Endpoint         string  `json:"endpoint"`
+}
+
+// ---------------------------------------------------------------------------
 // MonitorService
 // ---------------------------------------------------------------------------
 
@@ -392,6 +414,7 @@ type MonitorService struct {
 	eventCallback  EventCallback
 	stopCh         chan struct{}
 	started        bool
+	wg             sync.WaitGroup
 }
 
 // MonitorConfig holds configuration for a new MonitorService.
@@ -464,8 +487,8 @@ func (ms *MonitorService) Start() {
 	log.Println("[monitor] scheduler started")
 }
 
-// Stop halts the periodic scan.
-func (ms *MonitorService) Stop() {
+// StopScheduler stops the periodic scan ticker without waiting for running detections.
+func (ms *MonitorService) StopScheduler() {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	if !ms.started {
@@ -474,6 +497,18 @@ func (ms *MonitorService) Stop() {
 	close(ms.stopCh)
 	ms.started = false
 	log.Println("[monitor] scheduler stopped")
+}
+
+// WaitDetections blocks until all running detection goroutines have finished.
+func (ms *MonitorService) WaitDetections() {
+	ms.wg.Wait()
+	log.Println("[monitor] all detections finished")
+}
+
+// StopAndWait stops the scheduler and waits for all running detections to finish.
+func (ms *MonitorService) StopAndWait() {
+	ms.StopScheduler()
+	ms.WaitDetections()
 }
 
 // RunningTargetIDs returns IDs of targets currently being checked.
@@ -548,11 +583,13 @@ func (ms *MonitorService) TriggerTarget(targetID int, force bool) (bool, string)
 	ms.runningTargets[targetID] = true
 	ms.mu.Unlock()
 
+	ms.wg.Add(1)
 	go ms.runTargetSafe(target)
 	return true, "target started"
 }
 
 func (ms *MonitorService) runTargetSafe(target *Target) {
+	defer ms.wg.Done()
 	defer func() {
 		ms.mu.Lock()
 		delete(ms.runningTargets, target.ID)
@@ -609,10 +646,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 	}
 
 	// Concurrent detection with semaphore
-	type detectionResult struct {
-		row map[string]any
-	}
-	resultCh := make(chan detectionResult, len(models))
+	resultCh := make(chan DetectionResult, len(models))
 	sem := make(chan struct{}, ms.detectConcurrency)
 
 	var wg sync.WaitGroup
@@ -623,7 +657,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			row := ms.detectOne(target, mid, client)
-			resultCh <- detectionResult{row: row}
+			resultCh <- row
 		}(modelID)
 	}
 
@@ -633,7 +667,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 	}()
 
 	// Collect results and write log file
-	var rows []map[string]any
+	var rows []DetectionResult
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		markRunError("error", 0, 0, 0, fmt.Errorf("open log file failed: %w", err))
@@ -641,13 +675,21 @@ func (ms *MonitorService) runTarget(target *Target) {
 		return
 	}
 	var writeErr error
-	for dr := range resultCh {
-		row := dr.row
-		row["target_id"] = target.ID
-		row["run_id"] = runID
-		row["target_name"] = target.Name
+	for row := range resultCh {
+		// Write JSONL log with context fields
 		if writeErr == nil {
-			line, err := json.Marshal(row)
+			logEntry := struct {
+				DetectionResult
+				TargetID   int    `json:"target_id"`
+				RunID      int    `json:"run_id"`
+				TargetName string `json:"target_name"`
+			}{
+				DetectionResult: row,
+				TargetID:        target.ID,
+				RunID:           runID,
+				TargetName:      target.Name,
+			}
+			line, err := json.Marshal(logEntry)
 			if err != nil {
 				writeErr = fmt.Errorf("marshal log row failed: %w", err)
 			} else {
@@ -670,7 +712,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 	total := len(rows)
 	successCount := 0
 	for _, r := range rows {
-		if s, ok := r["success"].(bool); ok && s {
+		if r.Success {
 			successCount++
 		}
 	}
@@ -808,34 +850,33 @@ func routeToProtocol(route string) string {
 	return route
 }
 
-func (ms *MonitorService) detectOne(target *Target, modelID string, client *http.Client) map[string]any {
+func (ms *MonitorService) detectOne(target *Target, modelID string, client *http.Client) DetectionResult {
 	route := ms.chooseRoute(modelID)
 	baseURL := normalizeBaseURL(target.BaseURL)
 	headers := authHeaders(target.APIKey)
 	prompt := target.Prompt
 	anthropicVersion := target.AnthropicVersion
 
-	buildFail := func(endpoint, message string, durationS float64, statusCode *int, transportSuccess bool) map[string]any {
-		return map[string]any{
-			"protocol":          routeToProtocol(route),
-			"model":             modelID,
-			"stream":            false,
-			"duration":          math.Max(0, durationS),
-			"success":           false,
-			"transport_success": transportSuccess,
-			"tool_calls_count":  0,
-			"tool_calls":        []any{},
-			"tool_calls_json":   "[]",
-			"content":           "",
-			"timestamp":         float64(time.Now().UnixMilli()) / 1000.0,
-			"error":             message,
-			"status_code":       statusCode,
-			"route":             route,
-			"endpoint":          endpoint,
+	buildFail := func(endpoint, message string, durationS float64, statusCode *int, transportSuccess bool) DetectionResult {
+		return DetectionResult{
+			Protocol:         routeToProtocol(route),
+			Model:            modelID,
+			Stream:           false,
+			Duration:         math.Max(0, durationS),
+			Success:          false,
+			TransportSuccess: transportSuccess,
+			ToolCallsCount:   0,
+			ToolCalls:        "[]",
+			Content:          "",
+			Timestamp:        float64(time.Now().UnixMilli()) / 1000.0,
+			Error:            &message,
+			StatusCode:       statusCode,
+			Route:            route,
+			Endpoint:         endpoint,
 		}
 	}
 
-	validate := func(endpoint string, res *HttpResult, extractor func(any) string) map[string]any {
+	validate := func(endpoint string, res *HttpResult, extractor func(any) string) DetectionResult {
 		durationS := math.Max(0, float64(res.ElapsedMs)/1000.0)
 		if res.StatusCode != 200 {
 			msg := checkResponseBodyForError(res.JSONBody)
@@ -858,22 +899,21 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 			return buildFail(endpoint, "response parse failed: no readable text", durationS, &sc, true)
 		}
 		sc := res.StatusCode
-		return map[string]any{
-			"protocol":          routeToProtocol(route),
-			"model":             modelID,
-			"stream":            false,
-			"duration":          durationS,
-			"success":           true,
-			"transport_success": true,
-			"tool_calls_count":  0,
-			"tool_calls":        []any{},
-			"tool_calls_json":   "[]",
-			"content":           content,
-			"timestamp":         float64(time.Now().UnixMilli()) / 1000.0,
-			"error":             nil,
-			"status_code":       &sc,
-			"route":             route,
-			"endpoint":          endpoint,
+		return DetectionResult{
+			Protocol:         routeToProtocol(route),
+			Model:            modelID,
+			Stream:           false,
+			Duration:         durationS,
+			Success:          true,
+			TransportSuccess: true,
+			ToolCallsCount:   0,
+			ToolCalls:        "[]",
+			Content:          content,
+			Timestamp:        float64(time.Now().UnixMilli()) / 1000.0,
+			Error:            nil,
+			StatusCode:       &sc,
+			Route:            route,
+			Endpoint:         endpoint,
 		}
 	}
 

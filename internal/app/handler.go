@@ -394,13 +394,26 @@ func (h *Handlers) GetTarget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target)})
 }
 
-// CreateTarget -- POST /api/targets
-func (h *Handlers) CreateTarget(w http.ResponseWriter, r *http.Request) {
-	// Visitor token cannot create a new channel because no per-channel scope exists yet.
+// GetTargetModels -- GET /api/targets/{id}/models (admin Bearer token)
+func (h *Handlers) GetTargetModels(w http.ResponseWriter, r *http.Request) {
 	if authRoleFromRequest(r) != authRoleAdmin {
-		writeJSON(w, http.StatusForbidden, map[string]any{"detail": "admin token required to create channel"})
+		writeJSON(w, http.StatusForbidden, map[string]any{"detail": "admin token required"})
 		return
 	}
+	h.AdminGetChannelModels(w, r)
+}
+
+// PatchTargetModels -- PATCH /api/targets/{id}/models (admin Bearer token)
+func (h *Handlers) PatchTargetModels(w http.ResponseWriter, r *http.Request) {
+	if authRoleFromRequest(r) != authRoleAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]any{"detail": "admin token required"})
+		return
+	}
+	h.AdminPatchChannelModels(w, r)
+}
+
+// CreateTarget -- POST /api/targets
+func (h *Handlers) CreateTarget(w http.ResponseWriter, r *http.Request) {
 	var payload map[string]any
 	if err := readJSON(r, &payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})

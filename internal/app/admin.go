@@ -18,6 +18,7 @@ const (
 	settingDefaultIntervalMin = "default_interval_min"
 	settingLogCleanupEnabled  = "log_cleanup_enabled"
 	settingLogMaxSizeMB       = "log_max_size_mb"
+	settingVisitorModeEnabled = "visitor_mode_enabled"
 )
 
 type AdminSessionManager struct {
@@ -216,6 +217,7 @@ type adminLoginRequest struct {
 type adminSettingsPatchRequest struct {
 	APIMonitorTokenAdmin   *string `json:"api_monitor_token_admin"`
 	APIMonitorTokenVisitor *string `json:"api_monitor_token_visitor"`
+	VisitorModeEnabled     *bool   `json:"visitor_mode_enabled"`
 	ProxyMasterToken       *string `json:"proxy_master_token"`
 	LogCleanupEnabled      *bool   `json:"log_cleanup_enabled"`
 	LogMaxSizeMB           *int    `json:"log_max_size_mb"`
@@ -271,6 +273,7 @@ func (h *Handlers) loadAdminSettings() (map[string]any, error) {
 	return map[string]any{
 		"api_monitor_token_admin":   getAdminAuthToken(),
 		"api_monitor_token_visitor": getVisitorAuthToken(),
+		"visitor_mode_enabled":      isVisitorModeEnabled(),
 		"proxy_master_token":        proxyMasterToken,
 		"log_cleanup_enabled":       cleanupEnabled,
 		"log_max_size_mb":           cleanupMaxMB,
@@ -358,6 +361,15 @@ func (h *Handlers) AdminPatchSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		setAuthTokens(getAdminAuthToken(), token)
+	}
+
+	if req.VisitorModeEnabled != nil {
+		val := strconv.FormatBool(*req.VisitorModeEnabled)
+		if err := h.db.SetSetting(settingVisitorModeEnabled, val); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+			return
+		}
+		setVisitorModeEnabled(*req.VisitorModeEnabled)
 	}
 
 	if req.ProxyMasterToken != nil {

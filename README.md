@@ -123,6 +123,30 @@ docker compose logs -f
 
 - `http://127.0.0.1:8081/`
 
+## Windows 本地运行
+
+前置：安装 Go（建议 1.22+）。
+
+```powershell
+winget install --id GoLang.Go
+go version
+```
+
+推荐使用仓库自带的 `build.ps1`，会把 `GOCACHE/GOMODCACHE` 固定到项目目录：
+
+```powershell
+cd api_monitor_go
+.\build.ps1
+```
+
+如需手动运行：
+
+```powershell
+$env:GOCACHE="$PWD\.gocache"
+$env:GOMODCACHE="$PWD\.gomodcache"
+go run .
+```
+
 ## 鉴权说明
 
 - 除 `GET /api/health` 和静态页面外，API 需要：

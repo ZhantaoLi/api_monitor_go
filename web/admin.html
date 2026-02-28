@@ -132,21 +132,37 @@
         </div>
 
         <div
-          class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-4 space-y-2">
-          <label for="api-monitor-token-visitor"
-            class="text-xxs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
-            <i class="ph-bold ph-user text-indigo-500"></i>
-            API Monitor Visitor Token
-          </label>
-          <div class="relative">
-            <input id="api-monitor-token-visitor" type="password"
-              class="w-full form-input rounded-lg pl-3 pr-10 py-2 text-sm font-mono" placeholder="optional">
-            <button id="toggle-api-token-visitor-btn" type="button"
-              class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-              <i class="ph-bold ph-eye"></i>
-            </button>
+          class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <label
+              class="text-xxs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="ph-bold ph-user text-indigo-500"></i>
+              Visitor Mode
+            </label>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input id="visitor-mode-toggle" type="checkbox" class="sr-only peer">
+              <div
+                class="w-9 h-5 bg-zinc-300 dark:bg-zinc-600 rounded-full peer peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full">
+              </div>
+              <span id="visitor-mode-label" class="ml-2 text-xs font-medium text-zinc-500">Enabled</span>
+            </label>
           </div>
-          <p class="text-xs text-zinc-500">Used for visitor read-only access. Leave empty to disable visitor token auth.</p>
+          <div id="visitor-token-section">
+            <label for="api-monitor-token-visitor"
+              class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Visitor Token</label>
+            <div class="relative mt-1">
+              <input id="api-monitor-token-visitor" type="password"
+                class="w-full form-input rounded-lg pl-3 pr-10 py-2 text-sm font-mono" placeholder="optional">
+              <button id="toggle-api-token-visitor-btn" type="button"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                <i class="ph-bold ph-eye"></i>
+              </button>
+            </div>
+            <p class="text-xs text-zinc-500 mt-1">Leave empty for anonymous visitor access (no token required).</p>
+          </div>
+          <div id="visitor-disabled-hint" class="hidden">
+            <p class="text-xs text-zinc-500">Visitor access is disabled. Only admin token can access the dashboard.</p>
+          </div>
         </div>
 
         <div

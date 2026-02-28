@@ -39,7 +39,7 @@ const Utils = {
         const headers = { ...this.authHeaders(), ...(options.headers || {}) };
         const res = await fetch(url, { ...options, headers });
         if (res.status === 401) {
-            const token = prompt('Please enter API_MONITOR_TOKEN_ADMIN or API_MONITOR_TOKEN_VISITOR:');
+            const token = prompt('Please enter TOKEN:');
             if (token) {
                 this.setToken(token);
                 // Retry with new token

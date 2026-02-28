@@ -17,6 +17,7 @@ import (
 type SSEBus struct {
 	mu          sync.Mutex
 	subscribers map[chan string]struct{}
+	closed      bool
 }
 
 // NewSSEBus creates a new SSE event bus.
@@ -29,6 +30,11 @@ func NewSSEBus() *SSEBus {
 func (b *SSEBus) subscribe() chan string {
 	ch := make(chan string, 64)
 	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		close(ch)
+		return ch
+	}
 	b.subscribers[ch] = struct{}{}
 	b.mu.Unlock()
 	return ch
@@ -40,11 +46,28 @@ func (b *SSEBus) unsubscribe(ch chan string) {
 	b.mu.Unlock()
 }
 
+// Close closes all subscriber channels, causing SSE handlers to exit.
+func (b *SSEBus) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
+	b.closed = true
+	for ch := range b.subscribers {
+		close(ch)
+		delete(b.subscribers, ch)
+	}
+}
+
 // Publish sends an SSE event to all connected clients.
 func (b *SSEBus) Publish(event, data string) {
 	msg := fmt.Sprintf("event: %s\ndata: %s\n\n", event, data)
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
 	for ch := range b.subscribers {
 		select {
 		case ch <- msg:
@@ -80,7 +103,11 @@ func (b *SSEBus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		select {
-		case msg := <-ch:
+		case msg, ok := <-ch:
+			if !ok {
+				// Bus closed, exit gracefully
+				return
+			}
 			fmt.Fprint(w, msg)
 			flusher.Flush()
 		case <-heartbeat.C:
@@ -110,6 +137,7 @@ var authRoleKey = authRoleContextKey{}
 
 var authAdminToken string
 var authVisitorToken string
+var authVisitorModeEnabled bool
 var authTokenMu sync.RWMutex
 
 func setAuthTokens(adminToken, visitorToken string) {
@@ -117,6 +145,18 @@ func setAuthTokens(adminToken, visitorToken string) {
 	authAdminToken = strings.TrimSpace(adminToken)
 	authVisitorToken = strings.TrimSpace(visitorToken)
 	authTokenMu.Unlock()
+}
+
+func setVisitorModeEnabled(enabled bool) {
+	authTokenMu.Lock()
+	authVisitorModeEnabled = enabled
+	authTokenMu.Unlock()
+}
+
+func isVisitorModeEnabled() bool {
+	authTokenMu.RLock()
+	defer authTokenMu.RUnlock()
+	return authVisitorModeEnabled
 }
 
 func getAdminAuthToken() string {
@@ -178,6 +218,11 @@ func authenticateRequestRole(r *http.Request) (authRole, bool) {
 		if visitorToken != "" && queryToken == visitorToken {
 			return authRoleVisitor, true
 		}
+	}
+
+	// Anonymous visitor: visitor mode enabled with no token configured
+	if isVisitorModeEnabled() && visitorToken == "" && (auth == "" || auth == "Bearer ") {
+		return authRoleVisitor, true
 	}
 
 	return authRoleUnknown, false
