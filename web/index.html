@@ -154,7 +154,7 @@
                       <div class="ml-1 flex items-center gap-1.5">
                         <a x-show="t.source_url" :href="t.source_url" target="_blank" @click.stop
                           class="p-1 rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
-                          title="Open Source">
+                          title="Link">
                           <i class="ph-bold ph-link"></i>
                         </a>
                       </div>
@@ -238,7 +238,7 @@
                   </button>
                   <a x-show="t.source_url" :href="t.source_url" target="_blank" @click.stop
                     class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
-                    title="Open Source">
+                    title="Link">
                     <i class="ph-bold ph-link"></i>
                   </a>
 
@@ -524,23 +524,25 @@
         </button>
       </div>
 
-      <div class="px-6 pt-4 pb-2 flex flex-wrap items-center justify-between gap-2">
-        <div class="text-xs text-zinc-500">
-          Checked models will be detected. Empty selection means all models.
-        </div>
+      <div class="px-6 pt-4 pb-2 flex flex-col gap-3">
         <div class="flex items-center gap-2">
+          <div class="relative flex-1">
+            <i class="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm"></i>
+            <input type="text" placeholder="Search models..." x-model="modelSearchQuery"
+              class="w-full pl-9 pr-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+          </div>
           <button @click="modelSelectAll(true)"
-            class="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-            Select All
-          </button>
+            class="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap"
+            title="Select all visible models">All +</button>
           <button @click="modelSelectLastOK()"
-            class="px-3 py-1.5 rounded-lg border border-emerald-300/60 dark:border-emerald-700/60 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/30 transition-colors">
-            Last OK
-          </button>
+            class="px-3 py-2 rounded-lg border border-emerald-300/60 dark:border-emerald-700/60 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/30 transition-colors whitespace-nowrap"
+            title="Select models that passed last detection">Last OK</button>
           <button @click="modelSelectAll(false)"
-            class="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-            Clear
-          </button>
+            class="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap"
+            title="Clear all selections">Clear</button>
+        </div>
+        <div class="text-xs text-zinc-500">
+          Use <span class="font-mono text-emerald-600 dark:text-emerald-400">+</span> to add models, <span class="font-mono text-rose-500">−</span> to remove. Empty selection = all models.
         </div>
       </div>
 
@@ -548,25 +550,29 @@
         <div
           class="max-h-80 overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 divide-y divide-zinc-200 dark:divide-zinc-800">
           <template x-if="modelModalLoading">
-            <div class="py-6 text-center text-sm text-zinc-500">Loading...</div>
+            <div class="py-6 text-center text-sm text-zinc-500">Fetching models from upstream...</div>
           </template>
-          <template x-if="!modelModalLoading && modelAvailable.length === 0 && !modelModalError">
-            <div class="py-6 text-center text-sm text-zinc-500">No model data yet. Run channel check first.</div>
+          <template x-if="!modelModalLoading && filteredModels().length === 0 && !modelModalError">
+            <div class="py-6 text-center text-sm text-zinc-500"
+              x-text="modelSearchQuery ? 'No models matching \"' + modelSearchQuery + '\"' : 'No models available. Check channel configuration.'"></div>
           </template>
-          <template x-for="m in modelAvailable" :key="m.model">
-            <label
-              class="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-              <input type="checkbox" :value="m.model" :checked="modelChecked.has(m.model)"
-                @change="toggleModelCheck(m.model, $event.target.checked)"
-                class="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500">
-              <div class="flex-1 min-w-0">
-                <span class="text-sm font-medium truncate block" x-text="m.model"></span>
+          <template x-for="m in filteredModels()" :key="m">
+            <div class="flex items-center justify-between gap-3 px-3 py-2 transition-colors"
+              :class="modelChecked.has(m) ? 'bg-emerald-50/60 dark:bg-emerald-900/20' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'">
+              <div class="min-w-0 flex-1">
+                <span class="text-sm font-medium truncate block"
+                  :class="modelChecked.has(m) ? 'text-emerald-800 dark:text-emerald-200' : 'text-zinc-800 dark:text-zinc-100'"
+                  x-text="m"></span>
               </div>
-              <span class="text-xs px-2 py-0.5 rounded-full font-medium"
-                :class="m.success ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'"
-                x-text="m.success ? 'OK' : 'FAIL'"></span>
-              <span class="text-[10px] text-zinc-400" x-text="m.protocol || ''"></span>
-            </label>
+              <button type="button"
+                @click="toggleModelCheck(m, !modelChecked.has(m))"
+                class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-lg font-bold transition-colors"
+                :class="modelChecked.has(m)
+                  ? 'text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/40'
+                  : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40'"
+                :title="modelChecked.has(m) ? 'Remove from selection' : 'Add to selection'"
+                x-text="modelChecked.has(m) ? '−' : '+'"></button>
+            </div>
           </template>
         </div>
         <div x-show="modelModalError" x-text="modelModalError"

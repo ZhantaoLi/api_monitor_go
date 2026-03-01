@@ -133,7 +133,7 @@ func (p *authFailureProtector) RecordFailure(scope authFailureScope, ip string) 
 		entry.blockedUntil = now.Add(policy.BlockFor)
 	}
 
-	if len(entries) > 4096 {
+	if len(entries) > 1024 {
 		for k, v := range entries {
 			if p.isEntryExpired(v, now, policy) {
 				delete(entries, k)
@@ -184,18 +184,28 @@ func writeBlockedAuthResponse(w http.ResponseWriter, retryAfter time.Duration) {
 	})
 }
 
+// trustProxyHeaders 控制是否信任 X-Forwarded-For 等代理头。
+// 通过 TRUST_PROXY_HEADERS 环境变量配置（默认 true，兼容反向代理部署）。
+var trustProxyHeaders = true
+
+func setTrustProxyHeaders(trust bool) {
+	trustProxyHeaders = trust
+}
+
 func clientIPFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if ip, ok := extractValidIP(r.Header.Get("CF-Connecting-IP")); ok {
-		return ip
-	}
-	if ip, ok := extractValidIP(r.Header.Get("X-Forwarded-For")); ok {
-		return ip
-	}
-	if ip, ok := extractValidIP(r.Header.Get("X-Real-IP")); ok {
-		return ip
+	if trustProxyHeaders {
+		if ip, ok := extractValidIP(r.Header.Get("CF-Connecting-IP")); ok {
+			return ip
+		}
+		if ip, ok := extractValidIP(r.Header.Get("X-Forwarded-For")); ok {
+			return ip
+		}
+		if ip, ok := extractValidIP(r.Header.Get("X-Real-IP")); ok {
+			return ip
+		}
 	}
 
 	host := strings.TrimSpace(r.RemoteAddr)

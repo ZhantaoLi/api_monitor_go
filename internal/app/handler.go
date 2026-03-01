@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -15,11 +16,15 @@ const modelHistoryPoints = 30
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("[handler] writeJSON encode error: %v", err)
+	}
 }
 
 // readJSON decodes a JSON request body into target.
+// 限制请求体最大 1MB 防止内存耗尽。
 func readJSON(r *http.Request, target any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
 	return json.NewDecoder(r.Body).Decode(target)
 }
 
@@ -214,8 +219,16 @@ func (h *Handlers) requireChannelOperationPermission(w http.ResponseWriter, r *h
 	return false
 }
 
+// maskAPIKey 对 API 密钥进行掩码处理，仅保留首尾各 4 个字符。
+func maskAPIKey(key string) string {
+	if len(key) <= 8 {
+		return strings.Repeat("*", len(key))
+	}
+	return key[:4] + strings.Repeat("*", len(key)-8) + key[len(key)-4:]
+}
+
 // targetRuntimeFields enriches a Target with computed fields for the API response.
-func (h *Handlers) targetRuntimeFieldsWithData(t *Target, running bool, models []ModelStatus) map[string]any {
+func (h *Handlers) targetRuntimeFieldsWithData(t *Target, running bool, models []ModelStatus, role authRole) map[string]any {
 	total := 0
 	if t.LastTotal != nil {
 		total = *t.LastTotal
@@ -230,11 +243,16 @@ func (h *Handlers) targetRuntimeFieldsWithData(t *Target, running bool, models [
 		successRate = &rate
 	}
 
+	apiKey := t.APIKey
+	if role != authRoleAdmin {
+		apiKey = maskAPIKey(apiKey)
+	}
+
 	result := map[string]any{
 		"id":                              t.ID,
 		"name":                            t.Name,
 		"base_url":                        t.BaseURL,
-		"api_key":                         t.APIKey,
+		"api_key":                         apiKey,
 		"enabled":                         t.Enabled,
 		"interval_min":                    t.IntervalMin,
 		"timeout_s":                       t.TimeoutS,
@@ -262,12 +280,20 @@ func (h *Handlers) targetRuntimeFieldsWithData(t *Target, running bool, models [
 	return result
 }
 
-func (h *Handlers) targetRuntimeFields(t *Target) map[string]any {
+func (h *Handlers) targetRuntimeFields(t *Target, r *http.Request) map[string]any {
 	running := h.monitor.IsTargetRunning(t.ID)
+	role := authRoleFromRequest(r)
 	models, _ := h.db.GetLatestModelStatuses(t.ID)
 	historyByTarget, _ := h.db.GetModelHistoriesBatch([]int{t.ID}, modelHistoryPoints)
 	attachModelHistory(models, historyByTarget[t.ID])
-	return h.targetRuntimeFieldsWithData(t, running, models)
+	return h.targetRuntimeFieldsWithData(t, running, models, role)
+}
+
+// targetBasicFields 返回不含模型状态和历史的轻量级 target 信息。
+func (h *Handlers) targetBasicFields(t *Target, r *http.Request) map[string]any {
+	running := h.monitor.IsTargetRunning(t.ID)
+	role := authRoleFromRequest(r)
+	return h.targetRuntimeFieldsWithData(t, running, nil, role)
 }
 
 func attachModelHistory(models []ModelStatus, historyByModel map[string][]ModelHistoryPoint) {
@@ -362,7 +388,7 @@ func (h *Handlers) ListTargets(w http.ResponseWriter, r *http.Request) {
 		t := &targets[i]
 		models := modelsByTarget[t.ID]
 		attachModelHistory(models, historyByTarget[t.ID])
-		item := h.targetRuntimeFieldsWithData(t, runningSet[t.ID], models)
+		item := h.targetRuntimeFieldsWithData(t, runningSet[t.ID], models, role)
 		item["can_operate"] = h.canOperateChannels(r, t)
 		items = append(items, item)
 	}
@@ -391,7 +417,7 @@ func (h *Handlers) GetTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target)})
+	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target, r)})
 }
 
 // GetTargetModels -- GET /api/targets/{id}/models (admin Bearer token)
@@ -437,7 +463,7 @@ func (h *Handlers) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target)})
+	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target, r)})
 }
 
 // PatchTarget -- PATCH /api/targets/{id}
@@ -479,7 +505,7 @@ func (h *Handlers) PatchTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(updated)})
+	writeJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(updated, r)})
 }
 
 // DeleteTarget -- DELETE /api/targets/{id}
@@ -570,7 +596,7 @@ func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"target": h.targetRuntimeFields(target),
+		"target": h.targetBasicFields(target, r),
 		"items":  runs,
 	})
 }
@@ -641,7 +667,7 @@ func (h *Handlers) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"target": h.targetRuntimeFields(target),
+		"target": h.targetRuntimeFields(target, r),
 		"run":    chosenRun,
 		"count":  len(logs),
 		"items":  logs,

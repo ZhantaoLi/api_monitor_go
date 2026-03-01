@@ -19,20 +19,24 @@ function dashboard() {
         modelModalSaving: false,
         modelModalError: '',
         modelModalMeta: '',
+        modelSearchQuery: '',
         modelSelectingId: null,
         modelAvailable: [],
         modelChecked: new Set(),
+        modelLastOK: new Set(),
 
         defaultForm: {
             name: '', base_url: '', api_key: '', source_url: '',
             interval_min: 30, timeout_s: 30
         },
 
+        // SSE 重连退避状态
+        _sseReconnectDelay: 5000,
+        _sseMaxReconnectDelay: 60000,
+
         init() {
             this.loadData();
-            // SSE for real-time updates
             this.connectSSE();
-            // Fallback polling (60s)
             setInterval(() => this.loadData(), 60000);
         },
 
@@ -42,10 +46,20 @@ function dashboard() {
                 const es = Utils.createEventSource('/api/events');
                 es.addEventListener('run_completed', () => this.loadData());
                 es.addEventListener('target_updated', () => this.loadData());
+                es.addEventListener('auth_changed', () => {
+                    // 认证配置已变更，重新验证
+                    this.loadData();
+                });
+                es.addEventListener('connected', () => {
+                    // 连接成功，重置退避延迟
+                    this._sseReconnectDelay = 5000;
+                });
                 es.onerror = () => {
                     es.close();
-                    // Reconnect after 5s
-                    setTimeout(() => this.connectSSE(), 5000);
+                    // 指数退避重连（5s→10s→20s→40s→60s max）
+                    const delay = this._sseReconnectDelay;
+                    this._sseReconnectDelay = Math.min(delay * 2, this._sseMaxReconnectDelay);
+                    setTimeout(() => this.connectSSE(), delay);
                 };
             } catch (e) {
                 console.warn('SSE not available, using polling', e);
@@ -112,12 +126,7 @@ function dashboard() {
                 return sum + successCount;
             }, 0);
 
-            const activeTargets = this.targets.filter(t => t.enabled && t.last_total > 0);
-            let rate = 0;
-            if (activeTargets.length > 0) {
-                const sumRate = activeTargets.reduce((s, t) => s + (t.last_success_rate || 0), 0);
-                rate = Math.round(sumRate / activeTargets.length);
-            }
+            const rate = models > 0 ? Math.round(healthy * 100 / models) : 0;
 
             return { targets: total, healthy, models, rate };
         },
@@ -442,8 +451,10 @@ function dashboard() {
             this.modelSelectingId = targetId;
             this.modelAvailable = [];
             this.modelChecked = new Set();
+            this.modelLastOK = new Set();
+            this.modelSearchQuery = '';
             this.modelModalError = '';
-            this.modelModalMeta = 'Loading...';
+            this.modelModalMeta = 'Fetching models from upstream...';
             this.modelModalLoading = true;
             this.modelModalOpen = true;
 
@@ -451,18 +462,21 @@ function dashboard() {
                 const res = await Utils.authFetch(`/api/targets/${targetId}/models`);
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || 'Failed to load models');
+                    throw new Error(err.detail || 'Failed to fetch models');
                 }
                 const data = await res.json();
                 const item = data.item || {};
                 this.modelAvailable = Array.isArray(item.available_models) ? item.available_models : [];
                 const selected = Array.isArray(item.selected_models) ? item.selected_models : [];
                 this.modelChecked = new Set(selected.map(s => String(s || '').trim()).filter(Boolean));
+                const lastOK = Array.isArray(item.last_ok_models) ? item.last_ok_models : [];
+                this.modelLastOK = new Set(lastOK.map(s => String(s || '').trim()).filter(Boolean));
                 this.updateModelMeta();
             } catch (err) {
                 this.modelAvailable = [];
                 this.modelChecked = new Set();
-                this.modelModalError = err.message || 'Failed to load models';
+                this.modelLastOK = new Set();
+                this.modelModalError = err.message || 'Failed to fetch models from upstream';
             } finally {
                 this.modelModalLoading = false;
             }
@@ -473,6 +487,8 @@ function dashboard() {
             this.modelSelectingId = null;
             this.modelAvailable = [];
             this.modelChecked = new Set();
+            this.modelLastOK = new Set();
+            this.modelSearchQuery = '';
             this.modelModalError = '';
         },
 
@@ -487,9 +503,9 @@ function dashboard() {
             this.updateModelMeta();
         },
 
-        modelSelectAll(checked) {
-            if (checked) {
-                this.modelChecked = new Set(this.modelAvailable.map(m => m.model));
+        modelSelectAll(add) {
+            if (add) {
+                this.modelChecked = new Set(this.modelAvailable);
             } else {
                 this.modelChecked = new Set();
             }
@@ -498,9 +514,23 @@ function dashboard() {
 
         modelSelectLastOK() {
             this.modelChecked = new Set(
-                this.modelAvailable.filter(m => m.success).map(m => m.model)
+                this.modelAvailable.filter(m => this.modelLastOK.has(m))
             );
             this.updateModelMeta();
+        },
+
+        filteredModels() {
+            if (this.modelModalLoading) return [];
+            const query = (this.modelSearchQuery || '').trim().toLowerCase();
+            // Sort: selected first, then alphabetical
+            const sorted = [...this.modelAvailable].sort((a, b) => {
+                const aSelected = this.modelChecked.has(a) ? 0 : 1;
+                const bSelected = this.modelChecked.has(b) ? 0 : 1;
+                if (aSelected !== bSelected) return aSelected - bSelected;
+                return a.localeCompare(b);
+            });
+            if (!query) return sorted;
+            return sorted.filter(m => m.toLowerCase().includes(query));
         },
 
         updateModelMeta() {

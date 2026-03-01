@@ -64,8 +64,15 @@ func (m *AdminSessionManager) Login(password string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	expireAt := time.Now().Add(m.ttl)
+	now := time.Now()
+	expireAt := now.Add(m.ttl)
 	m.mu.Lock()
+	// 顺便清理过期会话，避免内存积累
+	for k, exp := range m.sessions {
+		if now.After(exp) {
+			delete(m.sessions, k)
+		}
+	}
 	m.sessions[token] = expireAt
 	m.mu.Unlock()
 	return token, true
@@ -123,6 +130,14 @@ func (m *AdminSessionManager) Password() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.password
+}
+
+// TTL 返回会话有效期。
+func (m *AdminSessionManager) TTL() time.Duration {
+	if m == nil {
+		return 24 * time.Hour
+	}
+	return m.ttl
 }
 
 func adminSessionTokenFromRequest(r *http.Request) string {
@@ -303,7 +318,7 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	globalAuthFailureProtector.Clear(authFailureScopeLogin, clientIP)
-	setAdminSessionCookie(w, token, 24*time.Hour)
+	setAdminSessionCookie(w, token, h.admin.TTL())
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -405,6 +420,13 @@ func (h *Handlers) AdminPatchSettings(w http.ResponseWriter, r *http.Request) {
 
 	h.monitor.UpdateLogCleanupConfig(cleanupEnabled, cleanupMaxMB)
 
+	// 令牌变更时通过 SSE 通知已连接的客户端
+	if req.APIMonitorTokenAdmin != nil || req.APIMonitorTokenVisitor != nil || req.VisitorModeEnabled != nil {
+		if h.bus != nil {
+			h.bus.Publish("auth_changed", `{"message":"authentication settings changed"}`)
+		}
+	}
+
 	item, err := h.loadAdminSettings()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
@@ -490,6 +512,8 @@ func (h *Handlers) AdminPatchChannelAdvanced(w http.ResponseWriter, r *http.Requ
 }
 
 // AdminGetChannelModels handles GET /api/admin/channels/{id}/models
+// Fetches available models from the target's live /v1/models endpoint,
+// and includes last detection statuses for the "Last OK" feature.
 func (h *Handlers) AdminGetChannelModels(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
 	if !ok {
@@ -506,18 +530,23 @@ func (h *Handlers) AdminGetChannelModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	statuses, err := h.db.GetLatestModelStatuses(id)
+	models, err := h.monitor.FetchModels(target)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"detail": "failed to fetch models from upstream: " + err.Error(),
+		})
 		return
 	}
-	items := make([]map[string]any, 0, len(statuses))
-	for i := range statuses {
-		items = append(items, map[string]any{
-			"model":    statuses[i].Model,
-			"protocol": statuses[i].Protocol,
-			"success":  statuses[i].Success,
-		})
+
+	// Collect models that passed the last detection run.
+	var lastOK []string
+	statuses, err := h.db.GetLatestModelStatuses(id)
+	if err == nil {
+		for _, s := range statuses {
+			if s.Success {
+				lastOK = append(lastOK, s.Model)
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -525,7 +554,8 @@ func (h *Handlers) AdminGetChannelModels(w http.ResponseWriter, r *http.Request)
 			"target_id":        target.ID,
 			"target_name":      target.Name,
 			"selected_models":  target.SelectedModels,
-			"available_models": items,
+			"available_models": models,
+			"last_ok_models":   lastOK,
 		},
 	})
 }

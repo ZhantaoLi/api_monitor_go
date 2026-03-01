@@ -114,6 +114,7 @@
         modelSelectingChannelId: null,
         modelSelectionAvailable: [],
         modelSelectionChecked: new Set(),
+        modelLastOK: new Set(),
         resourceTimer: null,
         lastResourceSample: null,
 
@@ -143,6 +144,7 @@
             const modelsSelectAllBtn = dom.byId('channel-models-select-all-btn');
             const modelsLastOKBtn = dom.byId('channel-models-last-ok-btn');
             const modelsClearBtn = dom.byId('channel-models-clear-btn');
+            const modelsSearch = dom.byId('channel-models-search');
             const tbody = dom.byId('admin-channel-list-body');
 
             if (closeBtn) closeBtn.addEventListener('click', () => this.closeChannelAdvancedModal());
@@ -156,6 +158,7 @@
             if (modelsSelectAllBtn) modelsSelectAllBtn.addEventListener('click', () => this.toggleAllChannelModels(true));
             if (modelsLastOKBtn) modelsLastOKBtn.addEventListener('click', () => this.selectLastOKModels());
             if (modelsClearBtn) modelsClearBtn.addEventListener('click', () => this.toggleAllChannelModels(false));
+            if (modelsSearch) modelsSearch.addEventListener('input', () => this.renderChannelModelsList());
             if (tbody) {
                 tbody.addEventListener('click', (e) => {
                     const btn = e.target.closest('[data-action="edit-advanced"]');
@@ -185,17 +188,18 @@
             }
             const modelsList = dom.byId('channel-models-list');
             if (modelsList) {
-                modelsList.addEventListener('change', (e) => {
-                    const cb = e.target.closest('[data-model-checkbox]');
-                    if (!cb) return;
-                    const model = String(cb.dataset.model || '').trim();
+                modelsList.addEventListener('click', (e) => {
+                    const btn = e.target.closest('[data-model-action]');
+                    if (!btn) return;
+                    const model = String(btn.dataset.model || '').trim();
                     if (!model) return;
-                    if (cb.checked) {
+                    const action = btn.dataset.modelAction;
+                    if (action === 'add') {
                         this.modelSelectionChecked.add(model);
-                    } else {
+                    } else if (action === 'remove') {
                         this.modelSelectionChecked.delete(model);
                     }
-                    this.updateChannelModelsMeta();
+                    this.renderChannelModelsList();
                 });
             }
 
@@ -584,31 +588,53 @@
             }
             empty.classList.add('hidden');
             list.classList.remove('hidden');
-            for (const item of this.modelSelectionAvailable) {
-                const model = String(item?.model || '').trim();
-                if (!model) continue;
-                const protocol = String(item?.protocol || '').trim();
-                const success = !!item?.success;
+
+            const searchInput = dom.byId('channel-models-search');
+            const query = (searchInput?.value || '').trim().toLowerCase();
+
+            // Sort: selected first, then alphabetical
+            const sorted = [...this.modelSelectionAvailable].sort((a, b) => {
+                const aSelected = this.modelSelectionChecked.has(a) ? 0 : 1;
+                const bSelected = this.modelSelectionChecked.has(b) ? 0 : 1;
+                if (aSelected !== bSelected) return aSelected - bSelected;
+                return a.localeCompare(b);
+            });
+
+            let visibleCount = 0;
+            for (const model of sorted) {
+                const name = String(model || '').trim();
+                if (!name) continue;
+                if (query && !name.toLowerCase().includes(query)) continue;
+                visibleCount++;
+                const isSelected = this.modelSelectionChecked.has(name);
                 const row = document.createElement('div');
-                row.className = 'flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/40';
+                row.className = `flex items-center justify-between gap-3 px-3 py-2 ${isSelected
+                    ? 'bg-emerald-50/60 dark:bg-emerald-900/20'
+                    : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'}`;
                 row.innerHTML = `
-                    <div class="min-w-0">
-                        <div class="text-sm font-medium text-zinc-800 dark:text-zinc-100 truncate">${esc(model)}</div>
-                        <div class="text-[11px] text-zinc-500 mt-0.5">
-                            ${esc(protocol || '--')} ${success ? '· Last OK' : '· Last Fail'}
-                        </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-medium ${isSelected
+                            ? 'text-emerald-800 dark:text-emerald-200'
+                            : 'text-zinc-800 dark:text-zinc-100'} truncate">${esc(name)}</div>
                     </div>
-                    <label class="visitor-switch visitor-switch--compact cursor-pointer select-none">
-                        <input type="checkbox" data-model-checkbox data-model="${esc(model)}" ${this.modelSelectionChecked.has(model) ? 'checked' : ''}>
-                        <span class="visitor-switch-track">
-                            <span class="visitor-switch-on">ON</span>
-                            <span class="visitor-switch-off">OFF</span>
-                            <span class="visitor-switch-thumb"></span>
-                        </span>
-                    </label>
+                    <button type="button" data-model-action="${isSelected ? 'remove' : 'add'}" data-model="${esc(name)}"
+                        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-lg font-bold transition-colors ${isSelected
+                            ? 'text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/40'
+                            : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40'}"
+                        title="${isSelected ? 'Remove from selection' : 'Add to selection'}">
+                        ${isSelected ? '−' : '+'}
+                    </button>
                 `;
                 list.appendChild(row);
             }
+
+            if (visibleCount === 0 && query) {
+                const noMatch = document.createElement('div');
+                noMatch.className = 'text-sm text-zinc-500 py-4 text-center';
+                noMatch.textContent = `No models matching "${query}"`;
+                list.appendChild(noMatch);
+            }
+
             this.updateChannelModelsMeta();
         },
         updateChannelModelsMeta() {
@@ -633,41 +659,23 @@
             box.textContent = message;
         },
 
-        toggleAllChannelModels(checked) {
-            const list = dom.byId('channel-models-list');
-            if (!list) return;
-            const cbs = list.querySelectorAll('input[data-model-checkbox]');
-            this.modelSelectionChecked.clear();
-            cbs.forEach((cb) => {
-                cb.checked = !!checked;
-                const model = String(cb.dataset.model || '').trim();
-                if (checked && model) {
-                    this.modelSelectionChecked.add(model);
+        toggleAllChannelModels(add) {
+            if (add) {
+                for (const model of this.modelSelectionAvailable) {
+                    const name = String(model || '').trim();
+                    if (name) this.modelSelectionChecked.add(name);
                 }
-            });
-            this.updateChannelModelsMeta();
+            } else {
+                this.modelSelectionChecked.clear();
+            }
+            this.renderChannelModelsList();
         },
 
         selectLastOKModels() {
-            const list = dom.byId('channel-models-list');
-            if (!list) return;
-            const lastOK = new Set(
-                (Array.isArray(this.modelSelectionAvailable) ? this.modelSelectionAvailable : [])
-                    .filter((item) => !!item?.success)
-                    .map((item) => String(item?.model || '').trim())
-                    .filter(Boolean)
+            this.modelSelectionChecked = new Set(
+                this.modelSelectionAvailable.filter(m => this.modelLastOK.has(m))
             );
-            const cbs = list.querySelectorAll('input[data-model-checkbox]');
-            this.modelSelectionChecked.clear();
-            cbs.forEach((cb) => {
-                const model = String(cb.dataset.model || '').trim();
-                const checked = model !== '' && lastOK.has(model);
-                cb.checked = checked;
-                if (checked) {
-                    this.modelSelectionChecked.add(model);
-                }
-            });
-            this.updateChannelModelsMeta();
+            this.renderChannelModelsList();
         },
         async openChannelModelsModal(channelID) {
             const channel = this.channels.find((c) => Number(c.id) === Number(channelID));
@@ -675,7 +683,11 @@
             this.modelSelectingChannelId = Number(channelID);
             this.modelSelectionAvailable = [];
             this.modelSelectionChecked = new Set();
+            this.modelLastOK = new Set();
             this.setChannelModelsError('');
+
+            const searchInput = dom.byId('channel-models-search');
+            if (searchInput) searchInput.value = '';
 
             const modal = dom.byId('channel-models-modal');
             if (modal) {
@@ -684,7 +696,7 @@
             }
             const meta = dom.byId('channel-models-meta');
             if (meta) {
-                meta.textContent = 'Loading...';
+                meta.textContent = 'Fetching models from upstream...';
             }
 
             try {
@@ -693,12 +705,15 @@
                 this.modelSelectionAvailable = Array.isArray(item.available_models) ? item.available_models : [];
                 const selected = Array.isArray(item.selected_models) ? item.selected_models : [];
                 this.modelSelectionChecked = new Set(selected.map((s) => String(s || '').trim()).filter(Boolean));
+                const lastOK = Array.isArray(item.last_ok_models) ? item.last_ok_models : [];
+                this.modelLastOK = new Set(lastOK.map((s) => String(s || '').trim()).filter(Boolean));
                 this.renderChannelModelsList();
             } catch (err) {
                 this.modelSelectionAvailable = [];
                 this.modelSelectionChecked = new Set();
+                this.modelLastOK = new Set();
                 this.renderChannelModelsList();
-                this.setChannelModelsError(err.message || 'Failed to load channel models');
+                this.setChannelModelsError(err.message || 'Failed to fetch models from upstream');
             }
         },
 
@@ -711,7 +726,10 @@
             this.modelSelectingChannelId = null;
             this.modelSelectionAvailable = [];
             this.modelSelectionChecked = new Set();
+            this.modelLastOK = new Set();
             this.setChannelModelsError('');
+            const searchInput = dom.byId('channel-models-search');
+            if (searchInput) searchInput.value = '';
         },
 
         async saveChannelModelsSelection() {

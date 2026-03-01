@@ -4,6 +4,9 @@
 
 仓库地址：`https://github.com/ZhantaoLi/api_monitor_go`
 
+![Repo Size](https://img.shields.io/github/repo-size/ZhantaoLi/api_monitor_go?style=flat-square&color=blue)
+![Last Commit](https://img.shields.io/github/last-commit/ZhantaoLi/api_monitor_go?style=flat-square&color=blue)
+
 ## 功能概览
 
 - 渠道管理：增删改查目标渠道（`name + base_url + api_key`）
@@ -51,7 +54,9 @@ api_monitor_go/
 │       ├── handler.go           # /api/targets 等监控 API 与数据聚合
 │       ├── monitor.go           # 调度器、并发探测、日志落盘、历史汇总
 │       ├── proxy.go             # /v1/* 代理转发、proxy key 权限控制
+│       ├── resources.go         # 系统资源监控（CPU、内存、磁盘）
 │       ├── run.go               # 路由注册、中间件装配、环境变量初始化
+│       ├── security.go          # Token 鉴权中间件、IP 限速与防暴力破解
 │       └── sse.go               # SSE 事件总线与鉴权中间件
 ├── web/                         # 前端页面与静态资源（embed 到二进制）
 │   ├── assets/
@@ -188,6 +193,8 @@ go run .
 - `POST /api/targets/{id}/run`
 - `GET /api/targets/{id}/runs`
 - `GET /api/targets/{id}/logs`
+- `GET /api/targets/{id}/models`（管理员）
+- `PATCH /api/targets/{id}/models`（管理员）
 - `GET /api/proxy/keys`（管理员）
 - `POST /api/proxy/keys`（管理员）
 - `DELETE /api/proxy/keys/{id}`（管理员）

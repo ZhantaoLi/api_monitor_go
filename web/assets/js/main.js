@@ -12,6 +12,12 @@ const Utils = {
         const fromUrl = params.get('token');
         if (fromUrl) {
             localStorage.setItem('api_monitor_token', fromUrl);
+            // 清除 URL 中的令牌参数，防止通过浏览器历史或 Referer 泄漏
+            params.delete('token');
+            const cleanURL = params.toString()
+                ? `${window.location.pathname}?${params.toString()}`
+                : window.location.pathname;
+            history.replaceState(null, '', cleanURL);
             return fromUrl;
         }
         return '';
@@ -39,10 +45,10 @@ const Utils = {
         const headers = { ...this.authHeaders(), ...(options.headers || {}) };
         const res = await fetch(url, { ...options, headers });
         if (res.status === 401) {
-            const token = prompt('Please enter TOKEN:');
+            this.setToken('');
+            const token = prompt('Authentication required. Please enter your API token:');
             if (token) {
                 this.setToken(token);
-                // Retry with new token
                 const retryHeaders = { ...this.authHeaders(), ...(options.headers || {}) };
                 return fetch(url, { ...options, headers: retryHeaders });
             }

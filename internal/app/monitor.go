@@ -85,6 +85,20 @@ type utlsTransport struct {
 	insecureSkipVerify bool
 }
 
+// connCloserBody 包装 resp.Body，在 Close 时同时释放底层 TLS 连接，防止连接泄漏。
+type connCloserBody struct {
+	io.ReadCloser
+	onClose func()
+}
+
+func (b *connCloserBody) Close() error {
+	err := b.ReadCloser.Close()
+	if b.onClose != nil {
+		b.onClose()
+	}
+	return err
+}
+
 func (t *utlsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	host := req.URL.Hostname()
 	port := req.URL.Port()
@@ -115,17 +129,26 @@ func (t *utlsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	alpn := uConn.ConnectionState().NegotiatedProtocol
 
 	if alpn == "h2" {
-		// Server negotiated HTTP/2, use h2 transport.
 		h2t := &http2.Transport{}
 		h2conn, err := h2t.NewClientConn(uConn)
 		if err != nil {
 			uConn.Close()
 			return nil, fmt.Errorf("h2 client conn: %w", err)
 		}
-		return h2conn.RoundTrip(req)
+		resp, err := h2conn.RoundTrip(req)
+		if err != nil {
+			uConn.Close()
+			return nil, err
+		}
+		// 包装 Body：读取完成后关闭底层 TLS 连接
+		resp.Body = &connCloserBody{
+			ReadCloser: resp.Body,
+			onClose:    func() { uConn.Close() },
+		}
+		return resp, nil
 	}
 
-	// HTTP/1.1 fallback.
+	// HTTP/1.1 fallback
 	tr := &http.Transport{
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return uConn, nil
@@ -136,6 +159,14 @@ func (t *utlsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		uConn.Close()
 		return nil, err
+	}
+	// 包装 Body：读取完成后释放 Transport 空闲连接并关闭底层连接
+	resp.Body = &connCloserBody{
+		ReadCloser: resp.Body,
+		onClose: func() {
+			tr.CloseIdleConnections()
+			uConn.Close()
+		},
 	}
 	return resp, nil
 }
@@ -177,7 +208,7 @@ func httpJSON(client *http.Client, method, reqURL string, headers map[string]str
 	}
 	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(resp.Body)
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	text := string(raw)
 
 	var parsed any
@@ -451,12 +482,17 @@ func NewMonitorService(cfg MonitorConfig) *MonitorService {
 
 // SetEventCallback registers a callback for SSE events.
 func (ms *MonitorService) SetEventCallback(cb EventCallback) {
+	ms.mu.Lock()
 	ms.eventCallback = cb
+	ms.mu.Unlock()
 }
 
 func (ms *MonitorService) emitEvent(eventType, data string) {
-	if ms.eventCallback != nil {
-		ms.eventCallback(eventType, data)
+	ms.mu.Lock()
+	cb := ms.eventCallback
+	ms.mu.Unlock()
+	if cb != nil {
+		cb(eventType, data)
 	}
 }
 
@@ -600,7 +636,7 @@ func (ms *MonitorService) runTargetSafe(target *Target) {
 
 func (ms *MonitorService) runTarget(target *Target) {
 	startedAt := float64(time.Now().UnixMilli()) / 1000.0
-	ts := time.Now().Format("20060102_150405")
+	ts := time.Now().Format("20060102_150405_000")
 	logFile, _ := filepath.Abs(filepath.Join(ms.logDir, fmt.Sprintf("target_%d_%s.jsonl", target.ID, ts)))
 
 	ms.mu.Lock()
@@ -805,6 +841,12 @@ func (ms *MonitorService) getModels(target *Target, client *http.Client) ([]stri
 		return nil, fmt.Errorf("models list is empty")
 	}
 	return models, nil
+}
+
+// FetchModels fetches available models from the target's GET /v1/models endpoint.
+func (ms *MonitorService) FetchModels(target *Target) ([]string, error) {
+	client := httpClient(target.TimeoutS, target.VerifySSL)
+	return ms.getModels(target, client)
 }
 
 func filterModelsBySelection(models []string, selectedModels []string) []string {

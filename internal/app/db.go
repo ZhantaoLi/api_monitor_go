@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +31,8 @@ func NewDatabase(path string) (*Database, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn.SetMaxOpenConns(1)
+	// WAL 模式支持并发读，增加连接池大小以提升并发读取性能
+	conn.SetMaxOpenConns(4)
 	if _, err := conn.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		conn.Close()
 		return nil, err
@@ -204,7 +207,7 @@ func (d *Database) GetSettings(keys []string) (map[string]string, error) {
 	rows, err := d.conn.Query(`
 		SELECT key, value
 		FROM app_settings
-		WHERE key IN (`+joinStrings(placeholders, ",")+`)
+		WHERE key IN (`+strings.Join(placeholders, ",")+`)
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -270,18 +273,26 @@ func (d *Database) migrateDB() error {
 		}
 	}
 	if !hasSourceURL {
-		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN source_url TEXT")
+		if _, err := d.conn.Exec("ALTER TABLE targets ADD COLUMN source_url TEXT"); err != nil {
+			log.Printf("[db] migration warning: add source_url: %v", err)
+		}
 	}
 	if !hasSortOrder {
-		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+		if _, err := d.conn.Exec("ALTER TABLE targets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"); err != nil {
+			log.Printf("[db] migration warning: add sort_order: %v", err)
+		}
 	}
 	if !hasVisitorChannelActionsEnabled {
-		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN visitor_channel_actions_enabled INTEGER NOT NULL DEFAULT 0")
+		if _, err := d.conn.Exec("ALTER TABLE targets ADD COLUMN visitor_channel_actions_enabled INTEGER NOT NULL DEFAULT 0"); err != nil {
+			log.Printf("[db] migration warning: add visitor_channel_actions_enabled: %v", err)
+		}
 	}
 	if !hasSelectedModels {
-		_, _ = d.conn.Exec("ALTER TABLE targets ADD COLUMN selected_models TEXT NOT NULL DEFAULT '[]'")
+		if _, err := d.conn.Exec("ALTER TABLE targets ADD COLUMN selected_models TEXT NOT NULL DEFAULT '[]'"); err != nil {
+			log.Printf("[db] migration warning: add selected_models: %v", err)
+		}
 	}
-	_, _ = d.conn.Exec(`
+	if _, err := d.conn.Exec(`
 		WITH ordered AS (
 			SELECT id, ROW_NUMBER() OVER (ORDER BY id ASC) AS rn
 			FROM targets
@@ -291,8 +302,12 @@ func (d *Database) migrateDB() error {
 			SELECT rn FROM ordered WHERE ordered.id = targets.id
 		)
 		WHERE sort_order IS NULL OR sort_order <= 0
-	`)
-	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_targets_sort_order ON targets(sort_order, id)")
+	`); err != nil {
+		log.Printf("[db] migration warning: init sort_order: %v", err)
+	}
+	if _, err := d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_targets_sort_order ON targets(sort_order, id)"); err != nil {
+		log.Printf("[db] migration warning: create idx_targets_sort_order: %v", err)
+	}
 	return nil
 }
 
@@ -570,10 +585,16 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 
 	var setClauses []string
 	var args []any
-	for key, val := range updates {
-		if !allowed[key] {
-			continue
+	// 排序 key 保证 SQL 语句稳定，有利于 prepared statement 缓存
+	sortedKeys := make([]string, 0, len(updates))
+	for key := range updates {
+		if allowed[key] {
+			sortedKeys = append(sortedKeys, key)
 		}
+	}
+	sort.Strings(sortedKeys)
+	for _, key := range sortedKeys {
+		val := updates[key]
 		switch key {
 		case "enabled", "verify_ssl", "visitor_channel_actions_enabled":
 			args = append(args, boolToInt(boolFromAny(val, false)))
@@ -597,7 +618,7 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 	args = append(args, float64(time.Now().UnixMilli())/1000.0)
 	args = append(args, targetID)
 
-	query := "UPDATE targets SET " + joinStrings(setClauses, ", ") + " WHERE id = ?"
+	query := "UPDATE targets SET " + strings.Join(setClauses, ", ") + " WHERE id = ?"
 
 	d.mu.Lock()
 	_, err := d.conn.Exec(query, args...)
@@ -717,7 +738,7 @@ func (d *Database) GetLatestModelStatusesBatch(targetIDs []int) (map[int][]Model
 		WITH latest_runs AS (
 			SELECT target_id, MAX(id) AS run_id
 			FROM runs
-			WHERE target_id IN (` + joinStrings(placeholders, ",") + `)
+			WHERE target_id IN (` + strings.Join(placeholders, ",") + `)
 			GROUP BY target_id
 		)
 		SELECT rm.target_id, rm.protocol, rm.model, rm.success, rm.duration, rm.error
@@ -790,7 +811,7 @@ func (d *Database) GetModelHistoriesBatch(targetIDs []int, points int) (map[int]
 					ORDER BY COALESCE(timestamp, 0) DESC, id DESC
 				) AS rn
 			FROM run_models
-			WHERE target_id IN (` + joinStrings(placeholders, ",") + `)
+			WHERE target_id IN (` + strings.Join(placeholders, ",") + `)
 		)
 		SELECT target_id, model, success, duration, timestamp, error, status_code, rn
 		FROM ranked
@@ -1139,13 +1160,4 @@ func stringSliceFromAny(v any) []string {
 	}
 }
 
-func joinStrings(ss []string, sep string) string {
-	if len(ss) == 0 {
-		return ""
-	}
-	result := ss[0]
-	for _, s := range ss[1:] {
-		result += sep + s
-	}
-	return result
-}
+

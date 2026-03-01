@@ -8,6 +8,15 @@ data/
 .gocache/
 .gomodcache/
 
+# Secrets
+.env
+.env.*
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+
 # IDE
 .vscode/
 .idea/

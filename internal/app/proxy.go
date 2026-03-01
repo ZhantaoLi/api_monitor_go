@@ -12,15 +12,36 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const proxyBodyMaxBytes = 10 << 20 // 10MB
+
+// proxyClientCache 缓存代理请求的 HTTP 客户端，按 target 配置参数索引。
+// utlsTransport 本身不支持连接池，但缓存 Client 可减少重复分配。
+var proxyClientCache sync.Map
+
+type proxyClientKey struct {
+	timeoutS  float64
+	verifySSL bool
+}
+
+func getOrCreateProxyClient(timeoutS float64, verifySSL bool) *http.Client {
+	key := proxyClientKey{timeoutS: timeoutS, verifySSL: verifySSL}
+	if cached, ok := proxyClientCache.Load(key); ok {
+		return cached.(*http.Client)
+	}
+	client := httpClient(timeoutS, verifySSL)
+	actual, _ := proxyClientCache.LoadOrStore(key, client)
+	return actual.(*http.Client)
+}
 
 var (
 	errProxyNoTarget          = errors.New("no enabled target available")
@@ -164,13 +185,14 @@ func normalizeProxyAllowedModels(models []string) []string {
 
 func generateProxyToken() (string, error) {
 	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	raw := make([]byte, 36)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	buf := make([]byte, len(raw))
-	for i := range raw {
-		buf[i] = alphabet[int(raw[i])%len(alphabet)]
+	alphaLen := big.NewInt(int64(len(alphabet)))
+	buf := make([]byte, 36)
+	for i := range buf {
+		n, err := rand.Int(rand.Reader, alphaLen)
+		if err != nil {
+			return "", err
+		}
+		buf[i] = alphabet[n.Int64()]
 	}
 	return "sk-" + string(buf), nil
 }
@@ -695,10 +717,9 @@ func (h *Handlers) authenticateProxyRequest(r *http.Request) (*ProxyKey, error) 
 }
 
 func writeProxyAuthError(w http.ResponseWriter, err error) {
-	switch err {
-	case errProxyInvalidAuthHeader, errProxyInvalidKey:
+	if errors.Is(err, errProxyInvalidAuthHeader) || errors.Is(err, errProxyInvalidKey) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"detail": err.Error()})
-	default:
+	} else {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
 	}
 }
@@ -788,7 +809,9 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, proxyBodyMaxBytes))
+	// 使用 MaxBytesReader 限制请求体大小，超限时返回错误而非静默截断
+	r.Body = http.MaxBytesReader(w, r.Body, proxyBodyMaxBytes)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "failed to read request body"})
 		return
@@ -820,17 +843,14 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 	resolved, err := h.resolveProxyModel(key, model, reqTargetID)
 	if err != nil {
 		status := http.StatusBadGateway
-		switch err {
-		case errProxyNoTarget:
+		if errors.Is(err, errProxyNoTarget) {
 			status = http.StatusServiceUnavailable
-		case errProxyTargetNotAllowed, errProxyModelNotAllowed:
+		} else if errors.Is(err, errProxyTargetNotAllowed) || errors.Is(err, errProxyModelNotAllowed) {
 			status = http.StatusForbidden
-		case errProxyTargetNotFound:
+		} else if errors.Is(err, errProxyTargetNotFound) {
 			status = http.StatusNotFound
-		default:
-			if strings.Contains(err.Error(), "model") {
-				status = http.StatusBadRequest
-			}
+		} else if strings.Contains(err.Error(), "model") {
+			status = http.StatusBadRequest
 		}
 		writeJSON(w, status, map[string]any{"detail": err.Error()})
 		return
@@ -861,7 +881,7 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 		upstreamURL += "?" + r.URL.RawQuery
 	}
 
-	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
+	upReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(upstreamBody))
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"detail": "failed to create upstream request"})
 		return
@@ -884,7 +904,7 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 		upReq.Header.Set("X-Goog-Api-Key", target.APIKey)
 	}
 
-	client := httpClient(target.TimeoutS, target.VerifySSL)
+	client := getOrCreateProxyClient(target.TimeoutS, target.VerifySSL)
 	upResp, err := client.Do(upReq)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"detail": err.Error()})

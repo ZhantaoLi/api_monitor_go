@@ -23,28 +23,15 @@ const (
 )
 
 func envInt(name string, def int) int {
-	s := os.Getenv(name)
-	if s == "" {
-		return def
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 0 {
+	n := parseIntString(os.Getenv(name), def)
+	if n < 0 {
 		return def
 	}
 	return n
 }
 
 func envBool(name string, def bool) bool {
-	s := strings.TrimSpace(os.Getenv(name))
-	if s == "" {
-		return def
-	}
-	switch strings.ToLower(s) {
-	case "0", "false", "no", "off":
-		return false
-	default:
-		return true
-	}
+	return parseBoolString(os.Getenv(name), def)
 }
 
 func randomSecret(prefix string, byteLen int) (string, error) {
@@ -59,13 +46,11 @@ func randomSecret(prefix string, byteLen int) (string, error) {
 }
 
 func resolveRuntimeSecret(db *Database, envName, settingKey, randomPrefix string) (string, bool, error) {
-	// 1) explicit environment value has highest priority
 	envValue := strings.TrimSpace(os.Getenv(envName))
 	if envValue != "" {
 		return envValue, false, nil
 	}
 
-	// 2) fallback to persisted runtime secret
 	stored, ok, err := db.GetSetting(settingKey)
 	if err != nil {
 		return "", false, err
@@ -75,7 +60,6 @@ func resolveRuntimeSecret(db *Database, envName, settingKey, randomPrefix string
 		return stored, false, nil
 	}
 
-	// 3) first deployment: generate and persist
 	generated, err := randomSecret(randomPrefix, 16)
 	if err != nil {
 		return "", false, err
@@ -86,9 +70,8 @@ func resolveRuntimeSecret(db *Database, envName, settingKey, randomPrefix string
 	return generated, true, nil
 }
 
-// resolveOptionalRuntimeSecret resolves a runtime secret that can be empty.
-// Priority: env (including explicit empty) > persisted value > empty default.
-// It never auto-generates a value.
+// resolveOptionalRuntimeSecret 解析可选的运行时密钥。
+// 优先级：环境变量（包括显式空值） > 持久化值 > 空默认值。不会自动生成。
 func resolveOptionalRuntimeSecret(db *Database, envName, settingKey string) (string, bool, error) {
 	if envValue, ok := os.LookupEnv(envName); ok {
 		return strings.TrimSpace(envValue), false, nil
@@ -117,63 +100,74 @@ func serveEmbeddedHTML(webFS fs.FS, filePath string) http.HandlerFunc {
 	}
 }
 
-func Start(webFS fs.FS) {
-	// ---- Config from environment ----
+// appConfig 保存从环境变量加载的应用配置。
+type appConfig struct {
+	dataDir                   string
+	dbPath                    string
+	logDir                    string
+	logCleanupEnabled         bool
+	logMaxSizeMB              int
+	defaultIntervalMin        int
+	monitorDetectConcurrency  int
+	monitorMaxParallelTargets int
+	proxyMasterTokenDefault   string
+	port                      int
+}
+
+func loadConfig() appConfig {
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
 		dataDir = "data"
 	}
-	dbPath := filepath.Join(dataDir, "registry.db")
-	logDir := filepath.Join(dataDir, "logs")
-
-	logCleanupEnabled := envBool("LOG_CLEANUP_ENABLED", true)
-	logMaxSizeMB := envInt("LOG_MAX_SIZE_MB", 500)
 	defaultIntervalMin := envInt("DEFAULT_INTERVAL_MIN", 30)
-	monitorDetectConcurrency := envInt("MONITOR_DETECT_CONCURRENCY", 3)
-	monitorMaxParallelTargets := envInt("MONITOR_MAX_PARALLEL_TARGETS", 2)
 	if defaultIntervalMin < 1 || defaultIntervalMin > 1440 {
 		defaultIntervalMin = 30
 	}
-	proxyMasterTokenDefault := strings.TrimSpace(os.Getenv("PROXY_MASTER_TOKEN"))
-	port := envInt("PORT", 8081)
+	setTrustProxyHeaders(envBool("TRUST_PROXY_HEADERS", true))
 
-	// ---- Database ----
-	db, err := NewDatabase(dbPath)
+	return appConfig{
+		dataDir:                   dataDir,
+		dbPath:                    filepath.Join(dataDir, "registry.db"),
+		logDir:                    filepath.Join(dataDir, "logs"),
+		logCleanupEnabled:         envBool("LOG_CLEANUP_ENABLED", true),
+		logMaxSizeMB:              envInt("LOG_MAX_SIZE_MB", 500),
+		defaultIntervalMin:        defaultIntervalMin,
+		monitorDetectConcurrency:  envInt("MONITOR_DETECT_CONCURRENCY", 3),
+		monitorMaxParallelTargets: envInt("MONITOR_MAX_PARALLEL_TARGETS", 2),
+		proxyMasterTokenDefault:   strings.TrimSpace(os.Getenv("PROXY_MASTER_TOKEN")),
+		port:                      envInt("PORT", 8081),
+	}
+}
+
+// initDatabase 初始化数据库并加载持久化配置，返回修正后的配置值。
+func initDatabase(cfg appConfig) (*Database, bool, int, string, string, bool) {
+	db, err := NewDatabase(cfg.dbPath)
 	if err != nil {
 		log.Fatalf("database init failed: %v", err)
 	}
 	if err := db.EnsureProxySchema(); err != nil {
 		log.Fatalf("proxy schema init failed: %v", err)
 	}
-	if err := db.EnsureSettingDefault(settingLogCleanupEnabled, strconv.FormatBool(logCleanupEnabled)); err != nil {
-		log.Fatalf("settings init failed: %v", err)
+	for _, item := range []struct{ key, val string }{
+		{settingLogCleanupEnabled, strconv.FormatBool(cfg.logCleanupEnabled)},
+		{settingLogMaxSizeMB, strconv.Itoa(cfg.logMaxSizeMB)},
+		{settingDefaultIntervalMin, strconv.Itoa(cfg.defaultIntervalMin)},
+		{settingProxyMasterToken, cfg.proxyMasterTokenDefault},
+		{settingVisitorModeEnabled, "true"},
+	} {
+		if err := db.EnsureSettingDefault(item.key, item.val); err != nil {
+			log.Fatalf("settings init failed: %v", err)
+		}
 	}
-	if err := db.EnsureSettingDefault(settingLogMaxSizeMB, strconv.Itoa(logMaxSizeMB)); err != nil {
-		log.Fatalf("settings init failed: %v", err)
-	}
-	if err := db.EnsureSettingDefault(settingDefaultIntervalMin, strconv.Itoa(defaultIntervalMin)); err != nil {
-		log.Fatalf("settings init failed: %v", err)
-	}
-	if err := db.EnsureSettingDefault(settingProxyMasterToken, proxyMasterTokenDefault); err != nil {
-		log.Fatalf("settings init failed: %v", err)
-	}
-	if err := db.EnsureSettingDefault(settingVisitorModeEnabled, "true"); err != nil {
-		log.Fatalf("settings init failed: %v", err)
-	}
+
 	runtimeAdminAPIToken, adminTokenGenerated, err := resolveRuntimeSecret(
-		db,
-		"API_MONITOR_TOKEN_ADMIN",
-		settingRuntimeAPIToken,
-		"amtk-",
+		db, "API_MONITOR_TOKEN_ADMIN", settingRuntimeAPIToken, "amtk-",
 	)
 	if err != nil {
 		log.Fatalf("admin api token init failed: %v", err)
 	}
-
 	runtimeVisitorAPIToken, _, err := resolveOptionalRuntimeSecret(
-		db,
-		"API_MONITOR_TOKEN_VISITOR",
-		settingRuntimeVisitorAPIToken,
+		db, "API_MONITOR_TOKEN_VISITOR", settingRuntimeVisitorAPIToken,
 	)
 	if err != nil {
 		log.Fatalf("visitor api token init failed: %v", err)
@@ -181,78 +175,37 @@ func Start(webFS fs.FS) {
 	setAuthTokens(runtimeAdminAPIToken, runtimeVisitorAPIToken)
 
 	settingValues, err := db.GetSettings([]string{
-		settingLogCleanupEnabled,
-		settingLogMaxSizeMB,
-		settingVisitorModeEnabled,
+		settingLogCleanupEnabled, settingLogMaxSizeMB, settingVisitorModeEnabled,
 	})
 	if err != nil {
 		log.Fatalf("settings load failed: %v", err)
 	}
-	logCleanupEnabled = parseBoolString(settingValues[settingLogCleanupEnabled], logCleanupEnabled)
-	logMaxSizeMB = parseIntString(settingValues[settingLogMaxSizeMB], logMaxSizeMB)
+	logCleanupEnabled := parseBoolString(settingValues[settingLogCleanupEnabled], cfg.logCleanupEnabled)
+	logMaxSizeMB := parseIntString(settingValues[settingLogMaxSizeMB], cfg.logMaxSizeMB)
 	if logMaxSizeMB < 0 {
 		logMaxSizeMB = 0
 	}
 	visitorModeEnabled := parseBoolString(settingValues[settingVisitorModeEnabled], true)
 	setVisitorModeEnabled(visitorModeEnabled)
-	log.Printf("[main] database opened: %s", dbPath)
+	log.Printf("[main] database opened: %s", cfg.dbPath)
 
-	// ---- Monitor Service ----
-	monitor := NewMonitorService(MonitorConfig{
-		DB:                 db,
-		LogDir:             logDir,
-		DetectConcurrency:  monitorDetectConcurrency,
-		MaxParallelTargets: monitorMaxParallelTargets,
-		EnableLogCleanup:   logCleanupEnabled,
-		LogMaxBytes:        int64(logMaxSizeMB) * 1024 * 1024,
-	})
+	return db, logCleanupEnabled, logMaxSizeMB, runtimeAdminAPIToken, runtimeVisitorAPIToken,
+		adminTokenGenerated
+}
 
-	// ---- SSE Event Bus ----
-	bus := NewSSEBus()
-	monitor.SetEventCallback(func(eventType, data string) {
-		bus.Publish(eventType, data)
-	})
-	monitor.Start()
-
-	log.Printf("[main] log cleanup config enabled=%v max_mb=%d", logCleanupEnabled, logMaxSizeMB)
-	log.Println("[main] auth=enabled")
-	if adminTokenGenerated {
-		log.Printf("[main] generated API_MONITOR_TOKEN_ADMIN=%s", runtimeAdminAPIToken)
-		log.Println("[main] save this token now; it is required for write operations and /admin/login")
+func setupRoutes(mux *http.ServeMux, h *Handlers, adminSessions *AdminSessionManager, webFS fs.FS, bus *SSEBus) {
+	webContent, err := fs.Sub(webFS, "web")
+	if err != nil {
+		log.Fatalf("failed to create sub filesystem for web/: %v", err)
 	}
-	if runtimeVisitorAPIToken == "" {
-		if visitorModeEnabled {
-			log.Println("[main] visitor mode=enabled (anonymous access, no token required)")
-		} else {
-			log.Println("[main] visitor mode=disabled")
-		}
-	} else {
-		log.Println("[main] visitor mode=enabled (token required)")
-	}
+	staticFileServer := http.FileServer(http.FS(webContent))
 
-	adminSessions := NewAdminSessionManager(runtimeAdminAPIToken, 24*time.Hour)
-	if adminSessions.Enabled() {
-		log.Println("[main] admin panel=enabled")
-	} else {
-		log.Fatal("[main] admin panel token is empty")
-	}
-
-	// ---- Handlers ----
-	h := &Handlers{db: db, monitor: monitor, bus: bus, admin: adminSessions}
-
-	// ---- Router (Go 1.22+ ServeMux with path params) ----
-	mux := http.NewServeMux()
-
-	// Static pages (no auth)
-	webContent, _ := fs.Sub(webFS, "web")
-
+	// 静态页面（无认证）
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			// Serve static files from embedded FS
-			http.FileServer(http.FS(webContent)).ServeHTTP(w, r)
+			staticFileServer.ServeHTTP(w, r)
 			return
 		}
-		// Serve index.html
 		data, err := fs.ReadFile(webFS, "web/index.html")
 		if err != nil {
 			http.Error(w, "not found", 404)
@@ -261,7 +214,6 @@ func Start(webFS fs.FS) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(data)
 	})
-
 	mux.HandleFunc("GET /viewer.html", serveEmbeddedHTML(webFS, "web/log_viewer.html"))
 	mux.HandleFunc("GET /analysis.html", serveEmbeddedHTML(webFS, "web/analysis.html"))
 	mux.HandleFunc("GET /admin/login", serveEmbeddedHTML(webFS, "web/admin_login.html"))
@@ -270,18 +222,16 @@ func Start(webFS fs.FS) {
 		http.Redirect(w, r, "/admin.html", http.StatusFound)
 	})))
 	mux.HandleFunc("GET /docs/proxy", serveEmbeddedHTML(webFS, "web/proxy_docs.html"))
-
-	// Static assets (CSS, JS, fonts, etc.)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(webContent))))
 
-	// Health (no auth)
+	// 无认证 API
 	mux.HandleFunc("GET /api/health", h.Health)
 	mux.HandleFunc("POST /api/admin/login", h.AdminLogin)
 
-	// SSE (auth)
+	// SSE（需认证）
 	mux.Handle("GET /api/events", authAnyMiddleware(bus))
 
-	// Protected API
+	// 受保护 API
 	mux.Handle("GET /api/dashboard", authAnyMiddleware(http.HandlerFunc(h.Dashboard)))
 	mux.Handle("GET /api/targets", authAnyMiddleware(http.HandlerFunc(h.ListTargets)))
 	mux.Handle("GET /api/targets/{id}", authAnyMiddleware(http.HandlerFunc(h.GetTarget)))
@@ -305,18 +255,71 @@ func Start(webFS fs.FS) {
 	mux.Handle("GET /api/admin/channels/{id}/models", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminGetChannelModels)))
 	mux.Handle("PATCH /api/admin/channels/{id}/models", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminPatchChannelModels)))
 
-	// Public proxy endpoints (authenticated by proxy key in Authorization header)
+	// 代理端点（通过 Authorization header 中的 proxy key 认证）
 	mux.HandleFunc("GET /v1/models", h.ProxyModels)
 	mux.HandleFunc("POST /v1/chat/completions", h.ProxyChatCompletions)
 	mux.HandleFunc("POST /v1/messages", h.ProxyMessages)
 	mux.HandleFunc("POST /v1/responses", h.ProxyResponses)
 	mux.HandleFunc("POST /v1beta/models/", h.ProxyGemini)
+}
 
-	// ---- Start Server ----
-	addr := fmt.Sprintf("0.0.0.0:%d", port)
+func Start(webFS fs.FS) {
+	cfg := loadConfig()
+
+	db, logCleanupEnabled, logMaxSizeMB, runtimeAdminAPIToken, runtimeVisitorAPIToken,
+		adminTokenGenerated := initDatabase(cfg)
+
+	// ---- 监控服务 ----
+	monitor := NewMonitorService(MonitorConfig{
+		DB:                 db,
+		LogDir:             cfg.logDir,
+		DetectConcurrency:  cfg.monitorDetectConcurrency,
+		MaxParallelTargets: cfg.monitorMaxParallelTargets,
+		EnableLogCleanup:   logCleanupEnabled,
+		LogMaxBytes:        int64(logMaxSizeMB) * 1024 * 1024,
+	})
+
+	// ---- SSE 事件总线 ----
+	bus := NewSSEBus()
+	monitor.SetEventCallback(func(eventType, data string) {
+		bus.Publish(eventType, data)
+	})
+	monitor.Start()
+
+	log.Printf("[main] log cleanup config enabled=%v max_mb=%d", logCleanupEnabled, logMaxSizeMB)
+	log.Println("[main] auth=enabled")
+	if adminTokenGenerated {
+		log.Printf("[main] generated API_MONITOR_TOKEN_ADMIN=%s", runtimeAdminAPIToken)
+		log.Println("[main] save this token now; it is required for write operations and /admin/login")
+	}
+	if runtimeVisitorAPIToken == "" {
+		if isVisitorModeEnabled() {
+			log.Println("[main] visitor mode=enabled (anonymous access, no token required)")
+		} else {
+			log.Println("[main] visitor mode=disabled")
+		}
+	} else {
+		log.Println("[main] visitor mode=enabled (token required)")
+	}
+
+	adminSessions := NewAdminSessionManager(runtimeAdminAPIToken, 24*time.Hour)
+	if adminSessions.Enabled() {
+		log.Println("[main] admin panel=enabled")
+	} else {
+		log.Fatal("[main] admin panel token is empty")
+	}
+
+	h := &Handlers{db: db, monitor: monitor, bus: bus, admin: adminSessions}
+	mux := http.NewServeMux()
+	setupRoutes(mux, h, adminSessions, webFS, bus)
+
+	// ---- 启动服务器 ----
+	addr := fmt.Sprintf("0.0.0.0:%d", cfg.port)
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -332,15 +335,12 @@ func Start(webFS fs.FS) {
 	<-ctx.Done()
 	log.Println("[main] shutdown signal received, stopping...")
 
-	// 1. Stop scheduler so no new detections are triggered
 	log.Println("[main] stopping monitor scheduler...")
 	monitor.StopScheduler()
 
-	// 2. Close SSE bus to disconnect all SSE clients
 	log.Println("[main] closing SSE connections...")
 	bus.Close()
 
-	// 3. Shutdown HTTP server (now quick since SSE clients are gone)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
@@ -349,11 +349,9 @@ func Start(webFS fs.FS) {
 		log.Println("[main] HTTP server stopped")
 	}
 
-	// 4. Wait for in-flight detections to finish
 	log.Println("[main] waiting for running detections to finish...")
 	monitor.WaitDetections()
 
-	// 5. Close database
 	log.Println("[main] closing database...")
 	if err := db.Close(); err != nil {
 		log.Printf("[main] database close error: %v", err)

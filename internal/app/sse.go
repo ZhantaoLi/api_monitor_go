@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -44,6 +46,17 @@ func (b *SSEBus) unsubscribe(ch chan string) {
 	b.mu.Lock()
 	delete(b.subscribers, ch)
 	b.mu.Unlock()
+	// drain 残留消息防止 Publish 阻塞
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+		default:
+			return
+		}
+	}
 }
 
 // Close closes all subscriber channels, causing SSE handlers to exit.
@@ -94,7 +107,10 @@ func (b *SSEBus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer b.unsubscribe(ch)
 
 	// Initial heartbeat
-	fmt.Fprint(w, "event: connected\ndata: ok\n\n")
+	if _, err := fmt.Fprint(w, "event: connected\ndata: ok\n\n"); err != nil {
+		log.Printf("[sse] initial write failed: %v", err)
+		return
+	}
 	flusher.Flush()
 
 	ctx := r.Context()
@@ -105,13 +121,16 @@ func (b *SSEBus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		select {
 		case msg, ok := <-ch:
 			if !ok {
-				// Bus closed, exit gracefully
 				return
 			}
-			fmt.Fprint(w, msg)
+			if _, err := fmt.Fprint(w, msg); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-heartbeat.C:
-			fmt.Fprint(w, ": heartbeat\n\n")
+			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-ctx.Done():
 			return
@@ -195,6 +214,11 @@ func authRoleFromRequest(r *http.Request) authRole {
 	return role
 }
 
+// constantTimeEqual 使用恒定时间比较两个字符串，防止时序攻击。
+func constantTimeEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
 func authenticateRequestRole(r *http.Request) (authRole, bool) {
 	adminToken := getAdminAuthToken()
 	visitorToken := getVisitorAuthToken()
@@ -203,19 +227,19 @@ func authenticateRequestRole(r *http.Request) (authRole, bool) {
 	}
 
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
-	if auth == "Bearer "+adminToken {
+	if constantTimeEqual(auth, "Bearer "+adminToken) {
 		return authRoleAdmin, true
 	}
-	if visitorToken != "" && auth == "Bearer "+visitorToken {
+	if visitorToken != "" && constantTimeEqual(auth, "Bearer "+visitorToken) {
 		return authRoleVisitor, true
 	}
 
 	if r.Method == http.MethodGet && r.URL.Path == "/api/events" {
 		queryToken := strings.TrimSpace(r.URL.Query().Get("token"))
-		if queryToken == adminToken {
+		if constantTimeEqual(queryToken, adminToken) {
 			return authRoleAdmin, true
 		}
-		if visitorToken != "" && queryToken == visitorToken {
+		if visitorToken != "" && constantTimeEqual(queryToken, visitorToken) {
 			return authRoleVisitor, true
 		}
 	}
