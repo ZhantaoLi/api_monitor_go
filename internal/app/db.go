@@ -110,6 +110,8 @@ func (d *Database) InitDB() error {
 			model TEXT,
 			stream INTEGER NOT NULL DEFAULT 0,
 			duration REAL,
+			ttfb REAL,
+			ping REAL,
 			success INTEGER NOT NULL DEFAULT 0,
 			transport_success INTEGER NOT NULL DEFAULT 0,
 			tool_calls_count INTEGER NOT NULL DEFAULT 0,
@@ -308,6 +310,43 @@ func (d *Database) migrateDB() error {
 	if _, err := d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_targets_sort_order ON targets(sort_order, id)"); err != nil {
 		log.Printf("[db] migration warning: create idx_targets_sort_order: %v", err)
 	}
+
+	// Migrate run_models: add ttfb, ping columns
+	{
+		rmRows, err := d.conn.Query("PRAGMA table_info(run_models)")
+		if err == nil {
+			hasTTFB := false
+			hasPing := false
+			for rmRows.Next() {
+				var cid int
+				var name, ctype string
+				var notnull int
+				var dfltValue sql.NullString
+				var pk int
+				if err := rmRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+					break
+				}
+				if name == "ttfb" {
+					hasTTFB = true
+				}
+				if name == "ping" {
+					hasPing = true
+				}
+			}
+			rmRows.Close()
+			if !hasTTFB {
+				if _, err := d.conn.Exec("ALTER TABLE run_models ADD COLUMN ttfb REAL"); err != nil {
+					log.Printf("[db] migration warning: add run_models.ttfb: %v", err)
+				}
+			}
+			if !hasPing {
+				if _, err := d.conn.Exec("ALTER TABLE run_models ADD COLUMN ping REAL"); err != nil {
+					log.Printf("[db] migration warning: add run_models.ping: %v", err)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -366,6 +405,8 @@ type ModelRow struct {
 	Model            *string         `json:"model"`
 	Stream           bool            `json:"stream"`
 	Duration         *float64        `json:"duration"`
+	TTFB             *float64        `json:"ttfb"`
+	Ping             *float64        `json:"ping"`
 	Success          bool            `json:"success"`
 	TransportSuccess bool            `json:"transport_success"`
 	ToolCallsCount   int             `json:"tool_calls_count"`
@@ -384,6 +425,8 @@ type ModelStatus struct {
 	Model    string              `json:"model"`
 	Success  bool                `json:"success"`
 	Duration *float64            `json:"duration"`
+	TTFB     *float64            `json:"ttfb"`
+	Ping     *float64            `json:"ping"`
 	Error    *string             `json:"error"`
 	History  []ModelHistoryPoint `json:"history"`
 }
@@ -392,6 +435,8 @@ type ModelStatus struct {
 type ModelHistoryPoint struct {
 	Success    bool     `json:"success"`
 	Duration   *float64 `json:"duration"`
+	TTFB       *float64 `json:"ttfb"`
+	Ping       *float64 `json:"ping"`
 	Timestamp  *float64 `json:"timestamp"`
 	Error      *string  `json:"error"`
 	StatusCode *int     `json:"status_code"`
@@ -408,7 +453,7 @@ const targetColumns = `id, name, base_url, api_key, enabled, interval_min, timeo
 
 const runColumns = `id, target_id, started_at, finished_at, status, total, success, fail, log_file, error`
 
-const runModelColumns = `id, run_id, target_id, protocol, model, stream, duration, success, transport_success,
+const runModelColumns = `id, run_id, target_id, protocol, model, stream, duration, ttfb, ping, success, transport_success,
 	tool_calls_count, tool_calls, content, timestamp, error, status_code, route, endpoint`
 
 // ---------------------------------------------------------------------------
@@ -463,7 +508,7 @@ func scanModelRow(r interface{ Scan(dest ...any) error }) (*ModelRow, error) {
 	var toolCallsRaw sql.NullString
 	err := r.Scan(
 		&m.ID, &m.RunID, &m.TargetID, &m.Protocol, &m.Model,
-		&stream, &m.Duration, &success, &transportSuccess,
+		&stream, &m.Duration, &m.TTFB, &m.Ping, &success, &transportSuccess,
 		&m.ToolCallsCount, &toolCallsRaw, &m.Content, &m.Timestamp,
 		&m.Error, &m.StatusCode, &m.Route, &m.Endpoint,
 	)
@@ -693,7 +738,7 @@ func (d *Database) GetLatestModelStatuses(targetID int) ([]ModelStatus, error) {
 	}
 
 	rows, err := conn.Query(`
-		SELECT protocol, model, success, duration, error
+		SELECT protocol, model, success, duration, ttfb, ping, error
 		FROM run_models WHERE run_id = ? ORDER BY model ASC`, runID)
 	if err != nil {
 		return nil, err
@@ -704,7 +749,7 @@ func (d *Database) GetLatestModelStatuses(targetID int) ([]ModelStatus, error) {
 	for rows.Next() {
 		var ms ModelStatus
 		var success int
-		if err := rows.Scan(&ms.Protocol, &ms.Model, &success, &ms.Duration, &ms.Error); err != nil {
+		if err := rows.Scan(&ms.Protocol, &ms.Model, &success, &ms.Duration, &ms.TTFB, &ms.Ping, &ms.Error); err != nil {
 			return nil, err
 		}
 		ms.Success = success != 0
@@ -741,7 +786,7 @@ func (d *Database) GetLatestModelStatusesBatch(targetIDs []int) (map[int][]Model
 			WHERE target_id IN (` + strings.Join(placeholders, ",") + `)
 			GROUP BY target_id
 		)
-		SELECT rm.target_id, rm.protocol, rm.model, rm.success, rm.duration, rm.error
+		SELECT rm.target_id, rm.protocol, rm.model, rm.success, rm.duration, rm.ttfb, rm.ping, rm.error
 		FROM run_models rm
 		JOIN latest_runs lr
 		  ON rm.run_id = lr.run_id AND rm.target_id = lr.target_id
@@ -758,7 +803,7 @@ func (d *Database) GetLatestModelStatusesBatch(targetIDs []int) (map[int][]Model
 		var targetID int
 		var ms ModelStatus
 		var success int
-		if err := rows.Scan(&targetID, &ms.Protocol, &ms.Model, &success, &ms.Duration, &ms.Error); err != nil {
+		if err := rows.Scan(&targetID, &ms.Protocol, &ms.Model, &success, &ms.Duration, &ms.TTFB, &ms.Ping, &ms.Error); err != nil {
 			return nil, err
 		}
 		ms.Success = success != 0
@@ -803,6 +848,8 @@ func (d *Database) GetModelHistoriesBatch(targetIDs []int, points int) (map[int]
 				model,
 				success,
 				duration,
+				ttfb,
+				ping,
 				timestamp,
 				error,
 				status_code,
@@ -813,7 +860,7 @@ func (d *Database) GetModelHistoriesBatch(targetIDs []int, points int) (map[int]
 			FROM run_models
 			WHERE target_id IN (` + strings.Join(placeholders, ",") + `)
 		)
-		SELECT target_id, model, success, duration, timestamp, error, status_code, rn
+		SELECT target_id, model, success, duration, ttfb, ping, timestamp, error, status_code, rn
 		FROM ranked
 		WHERE rn <= ?
 		ORDER BY target_id ASC, model ASC, rn DESC
@@ -833,7 +880,7 @@ func (d *Database) GetModelHistoriesBatch(targetIDs []int, points int) (map[int]
 			point    ModelHistoryPoint
 			rn       int
 		)
-		if err := rows.Scan(&targetID, &model, &success, &point.Duration, &point.Timestamp, &point.Error, &point.StatusCode, &rn); err != nil {
+		if err := rows.Scan(&targetID, &model, &success, &point.Duration, &point.TTFB, &point.Ping, &point.Timestamp, &point.Error, &point.StatusCode, &rn); err != nil {
 			return nil, err
 		}
 		_ = rn
@@ -914,10 +961,10 @@ func (d *Database) InsertModelRows(runID, targetID int, rows []DetectionResult) 
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO run_models (
-			run_id, target_id, protocol, model, stream, duration, success,
+			run_id, target_id, protocol, model, stream, duration, ttfb, ping, success,
 			transport_success, tool_calls_count, tool_calls, content, timestamp,
 			error, status_code, route, endpoint
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		tx.Rollback()
 		d.mu.Unlock()
@@ -931,6 +978,8 @@ func (d *Database) InsertModelRows(runID, targetID int, rows []DetectionResult) 
 			row.Protocol, row.Model,
 			boolToInt(row.Stream),
 			row.Duration,
+			row.TTFB,
+			row.Ping,
 			boolToInt(row.Success),
 			boolToInt(row.TransportSuccess),
 			row.ToolCallsCount,

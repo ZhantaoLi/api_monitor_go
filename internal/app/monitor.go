@@ -47,6 +47,7 @@ type HttpResult struct {
 	Text       string
 	JSONBody   any
 	ElapsedMs  int
+	TTFBMs     int
 }
 
 // ---------------------------------------------------------------------------
@@ -202,13 +203,14 @@ func httpJSON(client *http.Client, method, reqURL string, headers map[string]str
 
 	start := time.Now()
 	resp, err := client.Do(req)
-	elapsedMs := int(time.Since(start).Milliseconds())
+	ttfbMs := int(time.Since(start).Milliseconds())
 	if err != nil {
-		return nil, fmt.Errorf("HTTP %s %s failed (%dms): %w", method, reqURL, elapsedMs, err)
+		return nil, fmt.Errorf("HTTP %s %s failed (%dms): %w", method, reqURL, ttfbMs, err)
 	}
 	defer resp.Body.Close()
 
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	elapsedMs := int(time.Since(start).Milliseconds())
 	text := string(raw)
 
 	var parsed any
@@ -221,6 +223,7 @@ func httpJSON(client *http.Client, method, reqURL string, headers map[string]str
 		Text:       text,
 		JSONBody:   parsed,
 		ElapsedMs:  elapsedMs,
+		TTFBMs:     ttfbMs,
 	}, nil
 }
 
@@ -410,6 +413,8 @@ type DetectionResult struct {
 	Model            string  `json:"model"`
 	Stream           bool    `json:"stream"`
 	Duration         float64 `json:"duration"`
+	TTFB             float64 `json:"ttfb"`
+	Ping             float64 `json:"ping"`
 	Success          bool    `json:"success"`
 	TransportSuccess bool    `json:"transport_success"`
 	ToolCallsCount   int     `json:"tool_calls_count"`
@@ -685,6 +690,9 @@ func (ms *MonitorService) runTarget(target *Target) {
 	resultCh := make(chan DetectionResult, len(models))
 	sem := make(chan struct{}, ms.detectConcurrency)
 
+	// Measure TCP ping once for this target
+	pingS := measurePing(target.BaseURL, time.Duration(target.TimeoutS*float64(time.Second)))
+
 	var wg sync.WaitGroup
 	for _, modelID := range models {
 		wg.Add(1)
@@ -692,7 +700,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			row := ms.detectOne(target, mid, client)
+			row := ms.detectOne(target, mid, client, pingS)
 			resultCh <- row
 		}(modelID)
 	}
@@ -849,6 +857,31 @@ func (ms *MonitorService) FetchModels(target *Target) ([]string, error) {
 	return ms.getModels(target, client)
 }
 
+// measurePing measures TCP round-trip time to the target host.
+func measurePing(baseURL string, timeout time.Duration) float64 {
+	parsed, err := url.Parse(normalizeBaseURL(baseURL))
+	if err != nil {
+		return 0
+	}
+	host := parsed.Hostname()
+	port := parsed.Port()
+	if port == "" {
+		if parsed.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), timeout)
+	if err != nil {
+		return 0
+	}
+	elapsed := time.Since(start).Seconds()
+	conn.Close()
+	return elapsed
+}
+
 func filterModelsBySelection(models []string, selectedModels []string) []string {
 	if len(models) == 0 || len(selectedModels) == 0 {
 		return models
@@ -892,19 +925,21 @@ func routeToProtocol(route string) string {
 	return route
 }
 
-func (ms *MonitorService) detectOne(target *Target, modelID string, client *http.Client) DetectionResult {
+func (ms *MonitorService) detectOne(target *Target, modelID string, client *http.Client, pingS float64) DetectionResult {
 	route := ms.chooseRoute(modelID)
 	baseURL := normalizeBaseURL(target.BaseURL)
 	headers := authHeaders(target.APIKey)
 	prompt := target.Prompt
 	anthropicVersion := target.AnthropicVersion
 
-	buildFail := func(endpoint, message string, durationS float64, statusCode *int, transportSuccess bool) DetectionResult {
+	buildFail := func(endpoint, message string, durationS, ttfbS float64, statusCode *int, transportSuccess bool) DetectionResult {
 		return DetectionResult{
 			Protocol:         routeToProtocol(route),
 			Model:            modelID,
 			Stream:           false,
 			Duration:         math.Max(0, durationS),
+			TTFB:             math.Max(0, ttfbS),
+			Ping:             pingS,
 			Success:          false,
 			TransportSuccess: transportSuccess,
 			ToolCallsCount:   0,
@@ -920,6 +955,7 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 
 	validate := func(endpoint string, res *HttpResult, extractor func(any) string) DetectionResult {
 		durationS := math.Max(0, float64(res.ElapsedMs)/1000.0)
+		ttfbS := math.Max(0, float64(res.TTFBMs)/1000.0)
 		if res.StatusCode != 200 {
 			msg := checkResponseBodyForError(res.JSONBody)
 			if msg == "" {
@@ -929,16 +965,16 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 				msg = "unknown error"
 			}
 			sc := res.StatusCode
-			return buildFail(endpoint, fmt.Sprintf("HTTP %d: %s", res.StatusCode, msg), durationS, &sc, true)
+			return buildFail(endpoint, fmt.Sprintf("HTTP %d: %s", res.StatusCode, msg), durationS, ttfbS, &sc, true)
 		}
 		if bodyErr := checkResponseBodyForError(res.JSONBody); bodyErr != "" {
 			sc := res.StatusCode
-			return buildFail(endpoint, "response error: "+bodyErr, durationS, &sc, true)
+			return buildFail(endpoint, "response error: "+bodyErr, durationS, ttfbS, &sc, true)
 		}
 		content := extractor(res.JSONBody)
 		if content == "" {
 			sc := res.StatusCode
-			return buildFail(endpoint, "response parse failed: no readable text", durationS, &sc, true)
+			return buildFail(endpoint, "response parse failed: no readable text", durationS, ttfbS, &sc, true)
 		}
 		sc := res.StatusCode
 		return DetectionResult{
@@ -946,6 +982,8 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 			Model:            modelID,
 			Stream:           false,
 			Duration:         durationS,
+			TTFB:             ttfbS,
+			Ping:             pingS,
 			Success:          true,
 			TransportSuccess: true,
 			ToolCallsCount:   0,
@@ -970,9 +1008,34 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 		}
 		res, err := httpJSON(client, "POST", reqURL, headers, body)
 		if err != nil {
-			return buildFail("chat", err.Error(), 0, nil, false)
+			return buildFail("chat", err.Error(), 0, 0, nil, false)
 		}
-		return validate("chat", res, extractTextFromChat)
+		result := validate("chat", res, extractTextFromChat)
+		if result.Success {
+			return result
+		}
+		// Fallback: if chat endpoint returns HTTP 400 suggesting /v1/responses, retry
+		if res.StatusCode == 400 {
+			errText := checkResponseBodyForError(res.JSONBody)
+			if errText == "" {
+				errText = res.Text
+			}
+			if strings.Contains(strings.ToLower(errText), "/v1/responses") {
+				route = "responses"
+				respURL := baseURL + "/v1/responses"
+				respBody := map[string]any{
+					"model":  modelID,
+					"stream": false,
+					"input":  []map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": prompt}}}},
+				}
+				res2, err2 := httpJSON(client, "POST", respURL, headers, respBody)
+				if err2 != nil {
+					return buildFail("responses", err2.Error(), 0, 0, nil, false)
+				}
+				return validate("responses", res2, extractTextFromResponses)
+			}
+		}
+		return result
 
 	case "responses":
 		reqURL := baseURL + "/v1/responses"
@@ -983,7 +1046,7 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 		}
 		res, err := httpJSON(client, "POST", reqURL, headers, body)
 		if err != nil {
-			return buildFail("responses", err.Error(), 0, nil, false)
+			return buildFail("responses", err.Error(), 0, 0, nil, false)
 		}
 		return validate("responses", res, extractTextFromResponses)
 
@@ -1002,7 +1065,7 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 		}
 		res, err := httpJSON(client, "POST", reqURL, extHeaders, body)
 		if err != nil {
-			return buildFail("messages", err.Error(), 0, nil, false)
+			return buildFail("messages", err.Error(), 0, 0, nil, false)
 		}
 		return validate("messages", res, extractTextFromAnthropic)
 
@@ -1024,12 +1087,12 @@ func (ms *MonitorService) detectOne(target *Target, modelID string, client *http
 		}
 		res, err := httpJSON(client, "POST", reqURL, headers, body)
 		if err != nil {
-			return buildFail("gemini", err.Error(), 0, nil, false)
+			return buildFail("gemini", err.Error(), 0, 0, nil, false)
 		}
 		return validate("gemini", res, extractTextFromGemini)
 
 	default:
-		return buildFail("unknown", "unknown route: "+route, 0, nil, false)
+		return buildFail("unknown", "unknown route: "+route, 0, 0, nil, false)
 	}
 }
 

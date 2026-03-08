@@ -193,6 +193,8 @@
                   <th class="p-3">Requests</th>
                   <th class="p-3">Success Rate</th>
                   <th class="p-3">Avg Latency</th>
+                  <th class="p-3">Avg TTFB</th>
+                  <th class="p-3">Avg Ping</th>
                   <th class="p-3">P95 Latency</th>
                   <th class="p-3 rounded-r-lg">Errors</th>
                 </tr>
@@ -293,6 +295,14 @@
                 <th class="p-4 w-32 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
                   onclick="sortTable('latency')">
                   Latency <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 w-28 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('ttfb')">
+                  TTFB <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 w-28 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('ping')">
+                  Ping <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
                 </th>
                 <th class="p-4 w-32">Config</th>
                 <th class="p-4 w-12"></th> <!-- Expand Action -->

@@ -90,6 +90,8 @@ async function fetchLogs(targetId) {
             ...l,
             // Ensure numeric fields
             duration: typeof l.duration === 'number' ? l.duration : 0,
+            ttfb: typeof l.ttfb === 'number' ? l.ttfb : 0,
+            ping: typeof l.ping === 'number' ? l.ping : 0,
             timestamp: l.timestamp || 0,
             success: !!l.success,
             // Parse tool_calls if string
@@ -151,6 +153,8 @@ function applyFilters() {
 
     filteredLogs.sort((a, b) => {
         if (key === 'latency') return (a.duration - b.duration) * dir;
+        if (key === 'ttfb') return (a.ttfb - b.ttfb) * dir;
+        if (key === 'ping') return (a.ping - b.ping) * dir;
         if (key === 'status') return (a.success === b.success ? 0 : a.success ? 1 : -1) * dir;
         if (key === 'protocol') return (a.protocol || '').localeCompare(b.protocol || '') * dir;
         if (key === 'model') return (a.model || '').localeCompare(b.model || '') * dir;
@@ -187,6 +191,8 @@ function updateSortIcons() {
     if (sortState.key === 'protocol') targetTh = ths[3];
     if (sortState.key === 'model') targetTh = ths[4];
     if (sortState.key === 'latency') targetTh = ths[5];
+    if (sortState.key === 'ttfb') targetTh = ths[6];
+    if (sortState.key === 'ping') targetTh = ths[7];
 
         if (targetTh) {
         const icon = targetTh.querySelector('i');
@@ -420,13 +426,15 @@ function updateAnalytics() {
     filteredLogs.forEach(l => {
         const model = l.model || 'Unknown';
         if (!modelStats[model]) {
-            modelStats[model] = { count: 0, success: 0, totalLatency: 0, latencies: [], errors: 0 };
+            modelStats[model] = { count: 0, success: 0, totalLatency: 0, totalTTFB: 0, totalPing: 0, latencies: [], errors: 0 };
         }
         const s = modelStats[model];
         s.count++;
         if (l.success) {
             s.success++;
             s.totalLatency += l.duration;
+            s.totalTTFB += l.ttfb;
+            s.totalPing += l.ping;
             s.latencies.push(l.duration);
         } else {
             s.errors++;
@@ -441,6 +449,8 @@ function updateAnalytics() {
     sortedModels.forEach(model => {
         const s = modelStats[model];
         const avg = s.success > 0 ? (s.totalLatency / s.success * 1000).toFixed(0) : 0;
+        const avgTTFB = s.success > 0 ? (s.totalTTFB / s.success * 1000).toFixed(0) : 0;
+        const avgPing = s.success > 0 ? (s.totalPing / s.success * 1000).toFixed(0) : 0;
         const rate = Math.round((s.success / s.count) * 100);
 
         s.latencies.sort((a, b) => a - b);
@@ -465,6 +475,8 @@ function updateAnalytics() {
                         </div>
                     </td>
                     <td class="p-3 font-mono analysis-latency-strong text-xs">${avg}ms</td>
+                    <td class="p-3 font-mono text-cyan-600 dark:text-cyan-400 text-xs">${avgTTFB}ms</td>
+                    <td class="p-3 font-mono text-orange-600 dark:text-orange-400 text-xs">${avgPing}ms</td>
                     <td class="p-3 font-mono text-purple-600 dark:text-purple-400 text-xs">${p95}ms</td>
                     <td class="p-3 text-red-500 dark:text-red-400 font-bold text-xs">${s.errors > 0 ? s.errors : '-'}</td>
                 `;
@@ -516,6 +528,8 @@ function renderTable() {
             : `<span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/20 text-red-400 glow-error"><i class="ph-bold ph-x"></i></span>`;
 
         const duration = (log.duration * 1000).toFixed(0) + 'ms';
+        const ttfb = (log.ttfb * 1000).toFixed(0) + 'ms';
+        const ping = (log.ping * 1000).toFixed(0) + 'ms';
         const streamBadge = log.stream
             ? `<span class="px-2 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30">STREAM</span>`
             : `<span class="px-2 py-0.5 rounded text-[10px] bg-zinc-700 text-zinc-400 border border-zinc-600">STATIC</span>`;
@@ -536,6 +550,8 @@ function renderTable() {
                         <div class="text-xs text-zinc-600 dark:text-zinc-400 truncate max-w-[150px]" title="${log.model}">${log.model}</div>
                         </td>
                     <td class="p-4 font-mono analysis-latency-strong">${duration}</td>
+                    <td class="p-4 font-mono text-cyan-600 dark:text-cyan-400 text-xs">${ttfb}</td>
+                    <td class="p-4 font-mono text-orange-600 dark:text-orange-400 text-xs">${ping}</td>
                     <td class="p-4">${streamBadge}</td>
                     <td class="p-4 text-right">
                         <button onclick="openModal(${idDisplay})" class="p-2 rounded hover:bg-zinc-200/50 dark:hover:bg-white/10 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
