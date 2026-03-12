@@ -295,6 +295,38 @@ function dashboard() {
             return `${success} / ${total} = ${rateText}%`;
         },
 
+        channelPingSeconds(target) {
+            const models = Array.isArray(target?.latest_models) ? target.latest_models : [];
+            if (models.length === 0) return null;
+            let sum = 0;
+            let count = 0;
+            for (const model of models) {
+                const ping = model?.ping;
+                if (typeof ping === 'number' && Number.isFinite(ping) && ping > 0) {
+                    sum += ping;
+                    count += 1;
+                }
+            }
+            if (count === 0) return null;
+            return sum / count;
+        },
+
+        pingText(target) {
+            const pingS = this.channelPingSeconds(target);
+            if (!Number.isFinite(pingS)) return '--';
+            return `${Math.round(pingS * 1000)}ms`;
+        },
+
+        pingDotClass(target) {
+            const pingS = this.channelPingSeconds(target);
+            if (!Number.isFinite(pingS)) return 'bg-zinc-400/60';
+            const fmt = Utils.fmtDuration(pingS);
+            if (fmt?.class && fmt.class.startsWith('text-')) {
+                return fmt.class.replace('text-', 'bg-');
+            }
+            return 'bg-emerald-500';
+        },
+
         channelModelCounts(target) {
             const models = Array.isArray(target?.latest_models) ? target.latest_models : [];
             const counts = {

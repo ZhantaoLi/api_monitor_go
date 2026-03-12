@@ -912,14 +912,17 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 	}
 	defer upResp.Body.Close()
 
-	if key.ID > 0 {
-		_ = h.db.TouchProxyKeyUsage(key.ID, target.ID)
-	}
-
 	copyProxyResponseHeaders(w.Header(), upResp.Header)
 	w.Header().Set("X-Proxy-Target-Id", strconv.Itoa(target.ID))
 	w.Header().Set("X-Proxy-Upstream-Model", resolved.UpstreamModel)
 	w.WriteHeader(upResp.StatusCode)
+	if key.ID > 0 {
+		keyID := key.ID
+		targetID := target.ID
+		go func() {
+			_ = h.db.TouchProxyKeyUsage(keyID, targetID)
+		}()
+	}
 	if _, err := io.Copy(w, upResp.Body); err != nil {
 		log.Printf("[proxy] copy response failed: %v", err)
 	}

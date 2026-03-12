@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -186,17 +187,21 @@ func writeBlockedAuthResponse(w http.ResponseWriter, retryAfter time.Duration) {
 
 // trustProxyHeaders 控制是否信任 X-Forwarded-For 等代理头。
 // 通过 TRUST_PROXY_HEADERS 环境变量配置（默认 true，兼容反向代理部署）。
-var trustProxyHeaders = true
+var trustProxyHeaders = func() atomic.Bool {
+	var b atomic.Bool
+	b.Store(true)
+	return b
+}()
 
 func setTrustProxyHeaders(trust bool) {
-	trustProxyHeaders = trust
+	trustProxyHeaders.Store(trust)
 }
 
 func clientIPFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if trustProxyHeaders {
+	if trustProxyHeaders.Load() {
 		if ip, ok := extractValidIP(r.Header.Get("CF-Connecting-IP")); ok {
 			return ip
 		}

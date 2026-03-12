@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>API Monitor (Go)</title>
+  <link rel="icon" href="/activity.svg" type="image/svg+xml">
 
   <!-- Tailwind CSS -->
   <script src="/static/assets/vendor/tailwindcss.js"></script>
@@ -73,7 +74,7 @@
         <div class="w-px h-8 bg-zinc-200 dark:bg-zinc-800"></div>
         <div class="flex flex-col items-center">
           <span class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Health Rate</span>
-          <span class="font-mono font-bold text-lg text-indigo-500" x-text="stats.rate + '%'">0%</span>
+          <span class="font-mono font-bold text-lg text-green-500" x-text="stats.rate + '%'">0%</span>
         </div>
       </div>
 
@@ -160,6 +161,11 @@
                       </div>
                     </div>
                     <div class="text-xs text-zinc-500 font-mono mt-0.5 flex items-center gap-2 truncate">
+                      <span class="flex items-center gap-1">
+                        <span class="inline-block w-2 h-2 rounded-full" :class="pingDotClass(t)"></span>
+                        <span x-text="pingText(t)"></span>
+                      </span>
+                      <span class="opacity-30">|</span>
                       <span x-text="t.base_url"></span>
                       <span class="opacity-30">|</span>
                       <span class="flex items-center gap-1">
@@ -601,4 +607,3 @@
 </body>
 
 </html>
-

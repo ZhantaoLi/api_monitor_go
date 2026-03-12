@@ -9,8 +9,6 @@ function logViewer() {
         search: '',
         filterStatus: 'all',
         selectedId: null,
-        activeTab: 'overview', // overview, content, trace
-
         async init() {
             Utils.initTheme();
             if (this.targetId) {
@@ -83,7 +81,6 @@ function logViewer() {
 
         selectLog(log) {
             this.selectedId = log.id;
-            this.activeTab = 'overview';
         }
     }
 }

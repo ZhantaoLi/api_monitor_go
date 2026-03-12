@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>API Monitor - Log Viewer</title>
+  <link rel="icon" href="/activity.svg" type="image/svg+xml">
 
   <!-- Shared Utils (auth, theme, etc.) -->
   <script src="/static/assets/js/main.js"></script>
@@ -177,30 +178,13 @@
               </div>
             </div>
 
-            <!-- Tabs -->
-            <div class="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
-              <button @click="activeTab = 'overview'"
-                class="px-4 py-2 text-sm font-medium border-b-2 transition-colors relative top-px"
-                :class="activeTab === 'overview' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'">
-                Overview
-              </button>
-              <button @click="activeTab = 'content'"
-                class="px-4 py-2 text-sm font-medium border-b-2 transition-colors relative top-px"
-                :class="activeTab === 'content' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'">
-                Response Content
-              </button>
-              <button @click="activeTab = 'trace'"
-                class="px-4 py-2 text-sm font-medium border-b-2 transition-colors relative top-px"
-                :class="activeTab === 'trace' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'">
-                Trace / Tools
-              </button>
-            </div>
           </div>
 
           <!-- Detail Content -->
           <div class="flex-1 overflow-y-auto p-6 custom-scrollbar">
             <!-- Details: Overview -->
-            <div x-show="activeTab === 'overview'" class="space-y-6">
+            <div class="space-y-6">
+              <div class="text-xs font-bold uppercase tracking-wider text-zinc-400">Overview</div>
               <!-- Error Card -->
               <template x-if="selectedLog.error">
                 <div class="p-4 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
@@ -235,7 +219,8 @@
             </div>
 
             <!-- Details: Content -->
-            <div x-show="activeTab === 'content'" class="space-y-4">
+            <div class="space-y-4 mt-8">
+              <div class="text-xs font-bold uppercase tracking-wider text-zinc-400">Response Content</div>
               <div class="glass-panel p-0 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
                 <div
                   class="bg-zinc-50 dark:bg-zinc-800/50 px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
@@ -250,7 +235,8 @@
             </div>
 
             <!-- Details: Trace -->
-            <div x-show="activeTab === 'trace'" class="space-y-4">
+            <div class="space-y-4 mt-8">
+              <div class="text-xs font-bold uppercase tracking-wider text-zinc-400">Trace / Tools</div>
               <div class="glass-panel p-0 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
                 <div
                   class="bg-zinc-50 dark:bg-zinc-800/50 px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">

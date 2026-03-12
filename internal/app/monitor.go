@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -718,6 +719,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 		log.Printf("[monitor] run failed target=%s: open log file failed: %v", target.Name, err)
 		return
 	}
+	writer := bufio.NewWriter(f)
 	var writeErr error
 	for row := range resultCh {
 		// Write JSONL log with context fields
@@ -737,14 +739,17 @@ func (ms *MonitorService) runTarget(target *Target) {
 			if err != nil {
 				writeErr = fmt.Errorf("marshal log row failed: %w", err)
 			} else {
-				if _, err := f.Write(line); err != nil {
+				if _, err := writer.Write(line); err != nil {
 					writeErr = fmt.Errorf("write log row failed: %w", err)
-				} else if _, err := f.Write([]byte("\n")); err != nil {
+				} else if err := writer.WriteByte('\n'); err != nil {
 					writeErr = fmt.Errorf("write log newline failed: %w", err)
 				}
 			}
 		}
 		rows = append(rows, row)
+	}
+	if flushErr := writer.Flush(); flushErr != nil && writeErr == nil {
+		writeErr = fmt.Errorf("flush log buffer failed: %w", flushErr)
 	}
 	if err := f.Close(); err != nil && writeErr == nil {
 		writeErr = fmt.Errorf("close log file failed: %w", err)
