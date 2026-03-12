@@ -31,7 +31,7 @@ func NewDatabase(path string) (*Database, error) {
 	if err != nil {
 		return nil, err
 	}
-	// WAL 模式支持并发读，增加连接池大小以提升并发读取性能
+// WAL allows concurrent reads; increase pool size to improve read concurrency.
 	conn.SetMaxOpenConns(4)
 	if _, err := conn.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		conn.Close()
@@ -443,7 +443,7 @@ type ModelHistoryPoint struct {
 }
 
 // ---------------------------------------------------------------------------
-// 查询列名常量（顺序严格对齐 scan 函数）
+// Query column constants (order must match scan functions).
 // ---------------------------------------------------------------------------
 
 const targetColumns = `id, name, base_url, api_key, enabled, interval_min, timeout_s, verify_ssl,
@@ -630,7 +630,7 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 
 	var setClauses []string
 	var args []any
-	// 排序 key 保证 SQL 语句稳定，有利于 prepared statement 缓存
+// Sort keys to keep SQL stable and help prepared statement caching.
 	sortedKeys := make([]string, 0, len(updates))
 	for key := range updates {
 		if allowed[key] {
@@ -1208,5 +1208,3 @@ func stringSliceFromAny(v any) []string {
 		return []string{}
 	}
 }
-
-

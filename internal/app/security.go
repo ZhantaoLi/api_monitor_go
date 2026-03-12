@@ -185,8 +185,8 @@ func writeBlockedAuthResponse(w http.ResponseWriter, retryAfter time.Duration) {
 	})
 }
 
-// trustProxyHeaders 控制是否信任 X-Forwarded-For 等代理头。
-// 通过 TRUST_PROXY_HEADERS 环境变量配置（默认 true，兼容反向代理部署）。
+// trustProxyHeaders controls whether to trust X-Forwarded-For and similar proxy headers.
+// Configured via TRUST_PROXY_HEADERS (default true) for reverse-proxy deployments.
 var trustProxyHeaders = func() atomic.Bool {
 	var b atomic.Bool
 	b.Store(true)

@@ -46,7 +46,7 @@ func (b *SSEBus) unsubscribe(ch chan string) {
 	b.mu.Lock()
 	delete(b.subscribers, ch)
 	b.mu.Unlock()
-	// drain 残留消息防止 Publish 阻塞
+	// Drain pending messages to prevent Publish from blocking.
 	for {
 		select {
 		case _, ok := <-ch:
@@ -214,7 +214,7 @@ func authRoleFromRequest(r *http.Request) authRole {
 	return role
 }
 
-// constantTimeEqual 使用恒定时间比较两个字符串，防止时序攻击。
+// constantTimeEqual compares strings in constant time to prevent timing attacks.
 func constantTimeEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

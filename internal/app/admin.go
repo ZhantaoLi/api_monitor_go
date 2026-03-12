@@ -67,7 +67,7 @@ func (m *AdminSessionManager) Login(password string) (string, bool) {
 	now := time.Now()
 	expireAt := now.Add(m.ttl)
 	m.mu.Lock()
-	// 顺便清理过期会话，避免内存积累
+	// Opportunistically clear expired sessions to avoid memory growth.
 	for k, exp := range m.sessions {
 		if now.After(exp) {
 			delete(m.sessions, k)
@@ -132,7 +132,7 @@ func (m *AdminSessionManager) Password() string {
 	return m.password
 }
 
-// TTL 返回会话有效期。
+// TTL returns session lifetime.
 func (m *AdminSessionManager) TTL() time.Duration {
 	if m == nil {
 		return 24 * time.Hour
@@ -420,7 +420,7 @@ func (h *Handlers) AdminPatchSettings(w http.ResponseWriter, r *http.Request) {
 
 	h.monitor.UpdateLogCleanupConfig(cleanupEnabled, cleanupMaxMB)
 
-	// 令牌变更时通过 SSE 通知已连接的客户端
+	// Notify connected clients via SSE when tokens change.
 	if req.APIMonitorTokenAdmin != nil || req.APIMonitorTokenVisitor != nil || req.VisitorModeEnabled != nil {
 		if h.bus != nil {
 			h.bus.Publish("auth_changed", `{"message":"authentication settings changed"}`)

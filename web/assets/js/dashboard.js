@@ -30,7 +30,7 @@ function dashboard() {
             interval_min: 30, timeout_s: 30
         },
 
-        // SSE 重连退避状态
+        // SSE reconnect backoff state
         _sseReconnectDelay: 5000,
         _sseMaxReconnectDelay: 60000,
 
@@ -47,16 +47,16 @@ function dashboard() {
                 es.addEventListener('run_completed', () => this.loadData());
                 es.addEventListener('target_updated', () => this.loadData());
                 es.addEventListener('auth_changed', () => {
-                    // 认证配置已变更，重新验证
+                    // Auth configuration changed, re-validate
                     this.loadData();
                 });
                 es.addEventListener('connected', () => {
-                    // 连接成功，重置退避延迟
+                    // Connected, reset backoff delay
                     this._sseReconnectDelay = 5000;
                 });
                 es.onerror = () => {
                     es.close();
-                    // 指数退避重连（5s→10s→20s→40s→60s max）
+                    // Exponential backoff reconnect (5s→10s→20s→40s→60s max)
                     const delay = this._sseReconnectDelay;
                     this._sseReconnectDelay = Math.min(delay * 2, this._sseMaxReconnectDelay);
                     setTimeout(() => this.connectSSE(), delay);
@@ -389,7 +389,7 @@ function dashboard() {
 
         historyStatusLabel(point) {
             if (!point || point._placeholder) return 'NO DATA';
-            return point.success ? '正常' : '失败';
+            return point.success ? 'OK' : 'FAIL';
         },
 
         historyLatencyLabel(point) {
@@ -569,7 +569,7 @@ function dashboard() {
             const selected = this.modelChecked.size;
             const total = this.modelAvailable.length;
             this.modelModalMeta = selected === 0
-                ? `${total} models available (all will be detected)`
+                ? `${total} models available`
                 : `${selected} / ${total} models selected`;
         },
 

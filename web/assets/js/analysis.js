@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('searchInput').addEventListener('input', applyFilters);
     document.getElementById('filterProtocol').addEventListener('change', applyFilters);
     document.getElementById('filterStatus').addEventListener('change', applyFilters);
+    initProtocolDropdown();
 
     // Load Data
     if (targetId) {
@@ -74,6 +75,68 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('No target ID provided');
     }
 });
+
+let protocolDropdownOpen = false;
+
+function initProtocolDropdown() {
+    const btn = document.getElementById('filterProtocolBtn');
+    const menu = document.getElementById('filterProtocolMenu');
+    const select = document.getElementById('filterProtocol');
+    if (!btn || !menu || !select) return;
+
+    const closeMenu = () => {
+        if (!protocolDropdownOpen) return;
+        protocolDropdownOpen = false;
+        menu.classList.add('hidden');
+    };
+
+    const toggleMenu = (event) => {
+        event?.stopPropagation();
+        protocolDropdownOpen = !protocolDropdownOpen;
+        menu.classList.toggle('hidden', !protocolDropdownOpen);
+    };
+
+    btn.addEventListener('click', toggleMenu);
+
+    document.addEventListener('click', (e) => {
+        if (!protocolDropdownOpen) return;
+        if (menu.contains(e.target) || btn.contains(e.target)) return;
+        closeMenu();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMenu();
+    });
+}
+
+function renderProtocolDropdown(select) {
+    const btn = document.getElementById('filterProtocolBtn');
+    const menu = document.getElementById('filterProtocolMenu');
+    if (!btn || !menu || !select) return;
+
+    const selectedOption = select.options[select.selectedIndex];
+    btn.textContent = selectedOption ? selectedOption.textContent : 'All Protocols';
+
+    menu.innerHTML = '';
+    const options = Array.from(select.options);
+    for (const opt of options) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.textContent = opt.textContent;
+        item.className = 'w-full text-left px-3 py-2 text-sm transition-colors ' +
+            (opt.value === select.value
+                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300'
+                : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800/70');
+        item.addEventListener('click', () => {
+            select.value = opt.value;
+            renderProtocolDropdown(select);
+            applyFilters();
+            protocolDropdownOpen = false;
+            menu.classList.add('hidden');
+        });
+        menu.appendChild(item);
+    }
+}
 
 // --- Data Fetching ---
 async function fetchLogs(targetId) {
@@ -125,6 +188,7 @@ function populateFilters() {
     protocols.forEach(p => {
         select.innerHTML += `<option value="${p}">${p}</option>`;
     });
+    renderProtocolDropdown(select);
 }
 
 function applyFilters() {
@@ -532,7 +596,7 @@ function renderTable() {
         const ping = (log.ping * 1000).toFixed(0) + 'ms';
         const streamBadge = log.stream
             ? `<span class="px-2 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30">STREAM</span>`
-            : `<span class="px-2 py-0.5 rounded text-[10px] bg-zinc-700 text-zinc-400 border border-zinc-600">STATIC</span>`;
+            : `<span class="px-2 py-0.5 rounded text-[10px] bg-zinc-200 text-zinc-600 border border-zinc-300 dark:bg-zinc-700 dark:text-zinc-400 dark:border-zinc-600">STATIC</span>`;
 
         const timeStr = new Date(log.timestamp * 1000).toLocaleTimeString('en-US', { hour12: false });
 

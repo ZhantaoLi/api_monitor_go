@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>API Monitor (Go)</title>
-  <link rel="icon" href="/activity.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
   <!-- Tailwind CSS -->
   <script src="/static/assets/vendor/tailwindcss.js"></script>
@@ -36,7 +36,7 @@
 
   <!-- Sticky Navbar -->
   <nav
-    class="sticky top-0 z-40 w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
+    class="sticky top-0 z-50 w-full glass border-b border-zinc-300 dark:border-zinc-700 shadow-lg">
     <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
 
       <!-- Logo -->
@@ -50,8 +50,7 @@
           </span>
         </div>
         <a href="https://github.com/ZhantaoLi/api_monitor_go" target="_blank" rel="noopener noreferrer"
-          class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
-          title="GitHub">
+          class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
           <i class="ph-bold ph-github-logo text-lg"></i>
         </a>
       </div>
@@ -81,8 +80,7 @@
       <!-- Actions -->
       <div class="flex items-center gap-3">
         <button @click="refreshData()"
-          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-indigo-500 transition-colors"
-          title="Refresh Data">
+          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-indigo-500 transition-colors">
           <i class="ph-bold ph-arrows-clockwise" :class="loading ? 'animate-spin text-indigo-500' : ''"></i>
         </button>
         <button @click="Utils.toggleTheme()"
@@ -91,8 +89,7 @@
           <i class="ph-bold ph-moon hidden dark:block"></i>
         </button>
         <a href="/docs/proxy"
-          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-          title="Proxy Docs">
+          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
           <i class="ph-bold ph-book-open-text"></i>
         </a>
         <a href="/admin"
@@ -154,8 +151,7 @@
                         class="px-1.5 py-0.5 rounded text-xxs bg-zinc-200 dark:bg-zinc-800 text-zinc-500 border border-zinc-300 dark:border-zinc-700">DISABLED</span>
                       <div class="ml-1 flex items-center gap-1.5">
                         <a x-show="t.source_url" :href="t.source_url" target="_blank" @click.stop
-                          class="p-1 rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
-                          title="Link">
+                          class="p-1 rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
                           <i class="ph-bold ph-link"></i>
                         </a>
                       </div>
@@ -237,14 +233,12 @@
                     Detailed Logs
                   </a>
                   <button x-show="authRole === 'admin'" @click.stop="openModelSelection(t.id)"
-                    class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors flex items-center gap-1.5"
-                    title="Model Selection">
+                    class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors flex items-center gap-1.5">
                     <i class="ph-bold ph-funnel"></i>
                     Models
                   </button>
                   <a x-show="t.source_url" :href="t.source_url" target="_blank" @click.stop
-                    class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
-                    title="Link">
+                    class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors">
                     <i class="ph-bold ph-link"></i>
                   </a>
 
@@ -259,8 +253,7 @@
                         btn.innerHTML = '<i class=\'ph-bold ph-check text-green-500\'></i>';
                         setTimeout(() => btn.innerHTML = orig, 1500);
                       })"
-                      class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
-                      title="Copy API">
+                      class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors">
                       <i class="ph-bold ph-copy"></i>
                     </button>
                     <button @click.stop="toggleEnabled(t)"
@@ -269,8 +262,7 @@
                       <i class="ph-bold" :class="t.enabled ? 'ph-power' : 'ph-plug'"></i>
                     </button>
                     <button @click.stop="deleteTarget(t.id)"
-                      class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-zinc-400 hover:text-red-500 transition-colors"
-                      title="Delete Channel">
+                      class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-zinc-400 hover:text-red-500 transition-colors">
                       <i class="ph-bold ph-trash"></i>
                     </button>
                   </div>
@@ -416,8 +408,7 @@
 
         <!-- Scroll to Top -->
         <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})"
-          class="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-indigo-500 hover:text-white text-zinc-500 dark:text-zinc-400 transition-colors"
-          title="Scroll to Top">
+          class="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-indigo-500 hover:text-white text-zinc-500 dark:text-zinc-400 transition-colors">
           <i class="ph-bold ph-arrow-up"></i>
         </button>
       </div>
@@ -538,17 +529,11 @@
               class="w-full pl-9 pr-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
           </div>
           <button @click="modelSelectAll(true)"
-            class="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap"
-            title="Select all visible models">All +</button>
+            class="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap">All +</button>
           <button @click="modelSelectLastOK()"
-            class="px-3 py-2 rounded-lg border border-emerald-300/60 dark:border-emerald-700/60 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/30 transition-colors whitespace-nowrap"
-            title="Select models that passed last detection">Last OK</button>
+            class="px-3 py-2 rounded-lg border border-emerald-300/60 dark:border-emerald-700/60 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/30 transition-colors whitespace-nowrap">Last OK</button>
           <button @click="modelSelectAll(false)"
-            class="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap"
-            title="Clear all selections">Clear</button>
-        </div>
-        <div class="text-xs text-zinc-500">
-          Use <span class="font-mono text-emerald-600 dark:text-emerald-400">+</span> to add models, <span class="font-mono text-rose-500">−</span> to remove. Empty selection = all models.
+            class="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap">Clear</button>
         </div>
       </div>
 

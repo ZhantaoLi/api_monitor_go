@@ -24,8 +24,8 @@ import (
 
 const proxyBodyMaxBytes = 10 << 20 // 10MB
 
-// proxyClientCache 缓存代理请求的 HTTP 客户端，按 target 配置参数索引。
-// utlsTransport 本身不支持连接池，但缓存 Client 可减少重复分配。
+// proxyClientCache caches HTTP clients for proxy requests keyed by target config.
+// utlsTransport does not pool connections; caching clients reduces allocations.
 var proxyClientCache sync.Map
 
 type proxyClientKey struct {
@@ -809,7 +809,7 @@ func (h *Handlers) handleProxyRequest(w http.ResponseWriter, r *http.Request, fo
 		return
 	}
 
-	// 使用 MaxBytesReader 限制请求体大小，超限时返回错误而非静默截断
+	// Use MaxBytesReader to cap request body size; return error instead of silent truncation
 	r.Body = http.MaxBytesReader(w, r.Body, proxyBodyMaxBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {

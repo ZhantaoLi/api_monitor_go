@@ -22,7 +22,7 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 // readJSON decodes a JSON request body into target.
-// 限制请求体最大 1MB 防止内存耗尽。
+// Limit request body to 1MB to avoid memory exhaustion.
 func readJSON(r *http.Request, target any) error {
 	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
 	return json.NewDecoder(r.Body).Decode(target)
@@ -219,7 +219,7 @@ func (h *Handlers) requireChannelOperationPermission(w http.ResponseWriter, r *h
 	return false
 }
 
-// maskAPIKey 对 API 密钥进行掩码处理，仅保留首尾各 4 个字符。
+// maskAPIKey masks API keys, keeping only the first and last 4 chars.
 func maskAPIKey(key string) string {
 	if len(key) <= 8 {
 		return strings.Repeat("*", len(key))
@@ -289,7 +289,7 @@ func (h *Handlers) targetRuntimeFields(t *Target, r *http.Request) map[string]an
 	return h.targetRuntimeFieldsWithData(t, running, models, role)
 }
 
-// targetBasicFields 返回不含模型状态和历史的轻量级 target 信息。
+// targetBasicFields returns lightweight target info without model status/history.
 func (h *Handlers) targetBasicFields(t *Target, r *http.Request) map[string]any {
 	running := h.monitor.IsTargetRunning(t.ID)
 	role := authRoleFromRequest(r)

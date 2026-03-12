@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>API Monitor - Analysis</title>
-  <link rel="icon" href="/activity.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <!-- Shared Utils (auth, theme, etc.) -->
   <script src="/static/assets/js/main.js"></script>
   <!-- Tailwind CSS -->
@@ -34,7 +34,7 @@
 </head>
 
 <body
-  class="bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen font-sans transition-colors duration-300 bg-grid selection:bg-neon-purple selection:text-white pb-20">
+  class="bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen font-sans transition-colors duration-300 bg-grid pb-20">
 
   <!-- Navbar -->
   <nav class="fixed top-0 w-full z-50 glass border-b border-zinc-300 dark:border-zinc-700 shadow-lg">
@@ -230,8 +230,16 @@
             <div
               class="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-xl transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700">
               <i class="ph-bold ph-funnel text-zinc-500 dark:text-zinc-400"></i>
-              <select id="filterProtocol"
-                class="bg-transparent border-none text-sm focus:ring-0 text-zinc-900 dark:text-zinc-200 cursor-pointer outline-none [&>option]:bg-white [&>option]:text-zinc-900 dark:[&>option]:bg-zinc-900 dark:[&>option]:text-zinc-200 py-0 pr-8">
+              <div class="relative">
+                <button id="filterProtocolBtn" type="button"
+                  class="bg-transparent border-none text-sm text-zinc-900 dark:text-zinc-200 cursor-pointer outline-none py-0 pr-4">
+                  All Protocols
+                </button>
+                <div id="filterProtocolMenu"
+                  class="absolute bottom-full mb-2 left-0 z-50 hidden min-w-[180px] rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-xl overflow-hidden">
+                </div>
+              </div>
+              <select id="filterProtocol" class="sr-only">
                 <option value="all">All Protocols</option>
               </select>
             </div>
@@ -252,18 +260,16 @@
           <div class="flex-1 min-w-[200px]">
             <div class="relative group">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <i
-                  class="ph-bold ph-magnifying-glass text-zinc-400 group-focus-within:text-neon-blue transition-colors"></i>
+                <i class="ph-bold ph-magnifying-glass text-zinc-400 transition-colors"></i>
               </div>
               <input type="text" id="searchInput" placeholder="Search logs (model, content, error)..."
-                class="block w-full pl-10 pr-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-xl border-none focus:ring-2 focus:ring-neon-blue/50 placeholder-zinc-500 dark:placeholder-zinc-500 outline-none transition-all">
+                class="block w-full pl-10 pr-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-xl border-none focus:ring-0 placeholder-zinc-500 dark:placeholder-zinc-500 outline-none transition-all">
             </div>
           </div>
 
           <!-- Scroll to Top (Optional, fits nicely here) -->
           <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})"
-            class="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-neon-blue hover:text-white text-zinc-500 dark:text-zinc-400 transition-colors"
-            title="Scroll to Top">
+            class="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 transition-colors">
             <i class="ph-bold ph-arrow-up"></i>
           </button>
         </div>

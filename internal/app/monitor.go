@@ -87,7 +87,7 @@ type utlsTransport struct {
 	insecureSkipVerify bool
 }
 
-// connCloserBody 包装 resp.Body，在 Close 时同时释放底层 TLS 连接，防止连接泄漏。
+// connCloserBody wraps resp.Body; Close also frees the underlying TLS connection to avoid leaks.
 type connCloserBody struct {
 	io.ReadCloser
 	onClose func()
@@ -142,7 +142,7 @@ func (t *utlsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			uConn.Close()
 			return nil, err
 		}
-		// 包装 Body：读取完成后关闭底层 TLS 连接
+		// Wrap body: close underlying TLS connection after read.
 		resp.Body = &connCloserBody{
 			ReadCloser: resp.Body,
 			onClose:    func() { uConn.Close() },
@@ -162,7 +162,7 @@ func (t *utlsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		uConn.Close()
 		return nil, err
 	}
-	// 包装 Body：读取完成后释放 Transport 空闲连接并关闭底层连接
+	// Wrap body: close idle connections and underlying TLS connection after read.
 	resp.Body = &connCloserBody{
 		ReadCloser: resp.Body,
 		onClose: func() {

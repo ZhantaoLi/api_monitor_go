@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -70,8 +71,8 @@ func resolveRuntimeSecret(db *Database, envName, settingKey, randomPrefix string
 	return generated, true, nil
 }
 
-// resolveOptionalRuntimeSecret 解析可选的运行时密钥。
-// 优先级：环境变量（包括显式空值） > 持久化值 > 空默认值。不会自动生成。
+// resolveOptionalRuntimeSecret resolves optional runtime secrets.
+// Priority: env (including explicit empty) > stored value > empty default. Never auto-generate.
 func resolveOptionalRuntimeSecret(db *Database, envName, settingKey string) (string, bool, error) {
 	if envValue, ok := os.LookupEnv(envName); ok {
 		return strings.TrimSpace(envValue), false, nil
@@ -87,7 +88,27 @@ func resolveOptionalRuntimeSecret(db *Database, envName, settingKey string) (str
 	return "", false, nil
 }
 
-// serveEmbeddedHTML 返回一个从嵌入文件系统中读取并响应 HTML 文件的处理器。
+func resolveAppVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		v := strings.TrimSpace(info.Main.Version)
+		if v != "" && v != "(devel)" {
+			return normalizeVersion(v)
+		}
+	}
+	return "vdev"
+}
+
+func normalizeVersion(v string) string {
+	if v == "" || v == "(devel)" {
+		return "vdev"
+	}
+	if strings.HasPrefix(v, "v") {
+		return v
+	}
+	return "v" + v
+}
+
+// serveEmbeddedHTML returns a handler that serves HTML from the embedded filesystem.
 func serveEmbeddedHTML(webFS fs.FS, filePath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := fs.ReadFile(webFS, filePath)
@@ -100,7 +121,7 @@ func serveEmbeddedHTML(webFS fs.FS, filePath string) http.HandlerFunc {
 	}
 }
 
-// appConfig 保存从环境变量加载的应用配置。
+// appConfig holds application config loaded from env vars.
 type appConfig struct {
 	dataDir                   string
 	dbPath                    string
@@ -139,7 +160,7 @@ func loadConfig() appConfig {
 	}
 }
 
-// initDatabase 初始化数据库并加载持久化配置，返回修正后的配置值。
+// initDatabase initializes the DB and loads persisted config, returning effective values.
 func initDatabase(cfg appConfig) (*Database, bool, int, string, string, bool) {
 	db, err := NewDatabase(cfg.dbPath)
 	if err != nil {
@@ -200,7 +221,7 @@ func setupRoutes(mux *http.ServeMux, h *Handlers, adminSessions *AdminSessionMan
 	}
 	staticFileServer := http.FileServer(http.FS(webContent))
 
-	// 静态页面（无认证）
+	// Static pages (no auth)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			staticFileServer.ServeHTTP(w, r)
@@ -224,14 +245,14 @@ func setupRoutes(mux *http.ServeMux, h *Handlers, adminSessions *AdminSessionMan
 	mux.HandleFunc("GET /docs/proxy", serveEmbeddedHTML(webFS, "web/proxy_docs.html"))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(webContent))))
 
-	// 无认证 API
+	// Public API (no auth)
 	mux.HandleFunc("GET /api/health", h.Health)
 	mux.HandleFunc("POST /api/admin/login", h.AdminLogin)
 
-	// SSE（需认证）
+	// SSE (auth required)
 	mux.Handle("GET /api/events", authAnyMiddleware(bus))
 
-	// 受保护 API
+	// Protected API
 	mux.Handle("GET /api/dashboard", authAnyMiddleware(http.HandlerFunc(h.Dashboard)))
 	mux.Handle("GET /api/targets", authAnyMiddleware(http.HandlerFunc(h.ListTargets)))
 	mux.Handle("GET /api/targets/{id}", authAnyMiddleware(http.HandlerFunc(h.GetTarget)))
@@ -255,7 +276,7 @@ func setupRoutes(mux *http.ServeMux, h *Handlers, adminSessions *AdminSessionMan
 	mux.Handle("GET /api/admin/channels/{id}/models", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminGetChannelModels)))
 	mux.Handle("PATCH /api/admin/channels/{id}/models", adminAPIMiddleware(adminSessions, http.HandlerFunc(h.AdminPatchChannelModels)))
 
-	// 代理端点（通过 Authorization header 中的 proxy key 认证）
+	// Proxy endpoints (authenticated via proxy key in Authorization header)
 	mux.HandleFunc("GET /v1/models", h.ProxyModels)
 	mux.HandleFunc("POST /v1/chat/completions", h.ProxyChatCompletions)
 	mux.HandleFunc("POST /v1/messages", h.ProxyMessages)
@@ -265,11 +286,12 @@ func setupRoutes(mux *http.ServeMux, h *Handlers, adminSessions *AdminSessionMan
 
 func Start(webFS fs.FS) {
 	cfg := loadConfig()
+	log.Printf("[main] lming001/api_monitor_go:%s", resolveAppVersion())
 
 	db, logCleanupEnabled, logMaxSizeMB, runtimeAdminAPIToken, runtimeVisitorAPIToken,
 		adminTokenGenerated := initDatabase(cfg)
 
-	// ---- 监控服务 ----
+	// ---- Monitor service ----
 	monitor := NewMonitorService(MonitorConfig{
 		DB:                 db,
 		LogDir:             cfg.logDir,
@@ -279,7 +301,7 @@ func Start(webFS fs.FS) {
 		LogMaxBytes:        int64(logMaxSizeMB) * 1024 * 1024,
 	})
 
-	// ---- SSE 事件总线 ----
+	// ---- SSE event bus ----
 	bus := NewSSEBus()
 	monitor.SetEventCallback(func(eventType, data string) {
 		bus.Publish(eventType, data)
@@ -313,7 +335,7 @@ func Start(webFS fs.FS) {
 	mux := http.NewServeMux()
 	setupRoutes(mux, h, adminSessions, webFS, bus)
 
-	// ---- 启动服务器 ----
+	// ---- Start HTTP server ----
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.port)
 	srv := &http.Server{
 		Addr:              addr,
@@ -327,6 +349,7 @@ func Start(webFS fs.FS) {
 
 	go func() {
 		log.Printf("[main] api_monitor started on %s", addr)
+		log.Printf("[main] url=http://localhost:%d", cfg.port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
