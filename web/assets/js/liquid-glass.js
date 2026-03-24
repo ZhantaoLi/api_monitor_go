@@ -397,6 +397,13 @@
 
   // --- INIT ---
   document.addEventListener("DOMContentLoaded", () => {
+    // Check if the effect is globally enabled via the data attribute on the body or current script context
+    const isEnabled = document.body.getAttribute('data-glass-enabled') !== 'false';
+    if (!isEnabled) {
+      console.log("[LiquidGlass] Disabled by admin setting.");
+      return;
+    }
+
     // 1. Create the Shuding draggable lens
     const shader = new Shader({
       width: 200,

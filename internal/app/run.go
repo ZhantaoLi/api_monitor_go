@@ -175,6 +175,7 @@ func initDatabase(cfg appConfig) (*Database, bool, int, string, string, bool) {
 		{settingDefaultIntervalMin, strconv.Itoa(cfg.defaultIntervalMin)},
 		{settingProxyMasterToken, cfg.proxyMasterTokenDefault},
 		{settingVisitorModeEnabled, "true"},
+		{settingLiquidGlassEnabled, "true"},
 	} {
 		if err := db.EnsureSettingDefault(item.key, item.val); err != nil {
 			log.Fatalf("settings init failed: %v", err)
@@ -196,7 +197,7 @@ func initDatabase(cfg appConfig) (*Database, bool, int, string, string, bool) {
 	setAuthTokens(runtimeAdminAPIToken, runtimeVisitorAPIToken)
 
 	settingValues, err := db.GetSettings([]string{
-		settingLogCleanupEnabled, settingLogMaxSizeMB, settingVisitorModeEnabled,
+		settingLogCleanupEnabled, settingLogMaxSizeMB, settingVisitorModeEnabled, settingLiquidGlassEnabled,
 	})
 	if err != nil {
 		log.Fatalf("settings load failed: %v", err)
@@ -326,7 +327,7 @@ func Start(webFS fs.FS) {
 	}
 
 	// ---- Template renderer ----
-	pr := initPageRenderer(webFS)
+	pr := initPageRenderer(webFS, db)
 
 	h := &Handlers{db: db, monitor: monitor, bus: bus, admin: adminSessions}
 	mux := http.NewServeMux()

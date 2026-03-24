@@ -12,9 +12,10 @@ import (
 
 // PageData holds the data passed to every page template.
 type PageData struct {
-	Title   string        // <title> content
-	Lang    string        // html lang attribute (default "en")
-	BodyTag template.HTML // pre-built <body ...> opening tag
+	Title              string        // <title> content
+	Lang               string        // html lang attribute (default "en")
+	BodyTag            template.HTML // pre-built <body ...> opening tag
+	LiquidGlassEnabled bool          // whether the interactive lens is enabled
 }
 
 // pageDataInput is used in pageSpec to configure page defaults before building PageData.
@@ -22,7 +23,8 @@ type pageDataInput struct {
 	Title     string
 	Lang      string
 	BodyClass string
-	BodyAttrs string // raw extra attributes like x-data="..." or data-page="..."
+	BodyAttrs          string // raw extra attributes like x-data="..." or data-page="..."
+	LiquidGlassEnabled bool
 }
 
 func buildPageData(in pageDataInput) PageData {
@@ -33,11 +35,17 @@ func buildPageData(in pageDataInput) PageData {
 	if in.BodyAttrs != "" {
 		tag += " " + in.BodyAttrs
 	}
+	if in.LiquidGlassEnabled {
+		tag += ` data-glass-enabled="true"`
+	} else {
+		tag += ` data-glass-enabled="false"`
+	}
 	tag += ">"
 	return PageData{
-		Title:   in.Title,
-		Lang:    in.Lang,
-		BodyTag: template.HTML(tag),
+		Title:              in.Title,
+		Lang:               in.Lang,
+		BodyTag:            template.HTML(tag),
+		LiquidGlassEnabled: true, // Default, will be overridden in Render
 	}
 }
 
@@ -105,13 +113,17 @@ var pageRegistry = map[string]pageSpec{
 
 // PageRenderer holds pre-parsed page templates.
 type PageRenderer struct {
+	db    *Database
 	mu    sync.RWMutex
 	pages map[string]*template.Template
 }
 
 // initPageRenderer parses all page templates from the embedded filesystem.
-func initPageRenderer(webFS fs.FS) *PageRenderer {
-	pr := &PageRenderer{pages: make(map[string]*template.Template)}
+func initPageRenderer(webFS fs.FS, db *Database) *PageRenderer {
+	pr := &PageRenderer{
+		db:    db,
+		pages: make(map[string]*template.Template),
+	}
 
 	// Read shared templates (base + partials).
 	baseFile := "web/templates/base.html"
@@ -173,6 +185,18 @@ func (pr *PageRenderer) Render(w http.ResponseWriter, pageName string) error {
 	spec, ok := pageRegistry[pageName]
 	if !ok {
 		return fmt.Errorf("no spec for page: %s", pageName)
+	}
+
+	// Fetch dynamic settings from DB.
+	if pr.db != nil {
+		val, ok, _ := pr.db.GetSetting(settingLiquidGlassEnabled)
+		if ok {
+			spec.input.LiquidGlassEnabled = parseBoolString(val, true)
+		} else {
+			spec.input.LiquidGlassEnabled = true // default if not set
+		}
+	} else {
+		spec.input.LiquidGlassEnabled = true
 	}
 
 	data := buildPageData(spec.input)

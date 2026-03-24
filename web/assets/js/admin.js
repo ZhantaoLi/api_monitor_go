@@ -496,6 +496,8 @@
             if (proxyInput) proxyInput.value = this.item.proxy_master_token || '';
             if (cleanupEnabledInput) cleanupEnabledInput.checked = !!this.item.log_cleanup_enabled;
             if (cleanupSizeInput) cleanupSizeInput.value = this.item.log_max_size_mb ?? 500;
+            const glassEnabledInput = dom.byId('liquid-glass-enabled');
+            if (glassEnabledInput) glassEnabledInput.checked = !!this.item.liquid_glass_enabled;
         },
 
         updateVisitorModeUI(enabled) {
@@ -516,6 +518,7 @@
             const token = String(dom.byId('proxy-master-token')?.value || '').trim();
             const cleanupEnabled = !!dom.byId('log-cleanup-enabled')?.checked;
             const maxMB = parseIntStrict(dom.byId('log-max-size-mb')?.value, 500);
+            const glassEnabled = !!dom.byId('liquid-glass-enabled')?.checked;
 
             if (!apiMonitorTokenAdmin || apiMonitorTokenAdmin.length > 256) {
                 throw new Error('api_monitor_token_admin must be 1-256 chars');
@@ -533,7 +536,8 @@
                 visitor_mode_enabled: visitorModeEnabled,
                 proxy_master_token: token,
                 log_cleanup_enabled: cleanupEnabled,
-                log_max_size_mb: maxMB
+                log_max_size_mb: maxMB,
+                liquid_glass_enabled: glassEnabled
             };
         },
 

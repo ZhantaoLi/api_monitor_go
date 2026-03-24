@@ -19,6 +19,7 @@ const (
 	settingLogCleanupEnabled  = "log_cleanup_enabled"
 	settingLogMaxSizeMB       = "log_max_size_mb"
 	settingVisitorModeEnabled = "visitor_mode_enabled"
+	settingLiquidGlassEnabled = "liquid_glass_enabled"
 )
 
 type AdminSessionManager struct {
@@ -236,6 +237,7 @@ type adminSettingsPatchRequest struct {
 	ProxyMasterToken       *string `json:"proxy_master_token"`
 	LogCleanupEnabled      *bool   `json:"log_cleanup_enabled"`
 	LogMaxSizeMB           *int    `json:"log_max_size_mb"`
+	LiquidGlassEnabled     *bool   `json:"liquid_glass_enabled"`
 }
 
 type adminChannelAdvancedPatchRequest struct {
@@ -277,6 +279,7 @@ func (h *Handlers) loadAdminSettings() (map[string]any, error) {
 		settingProxyMasterToken,
 		settingLogCleanupEnabled,
 		settingLogMaxSizeMB,
+		settingLiquidGlassEnabled,
 	})
 	if err != nil {
 		return nil, err
@@ -292,6 +295,7 @@ func (h *Handlers) loadAdminSettings() (map[string]any, error) {
 		"proxy_master_token":        proxyMasterToken,
 		"log_cleanup_enabled":       cleanupEnabled,
 		"log_max_size_mb":           cleanupMaxMB,
+		"liquid_glass_enabled":      parseBoolString(settings[settingLiquidGlassEnabled], true),
 	}, nil
 }
 
@@ -413,6 +417,12 @@ func (h *Handlers) AdminPatchSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		cleanupMaxMB = *req.LogMaxSizeMB
 		if err := h.db.SetSetting(settingLogMaxSizeMB, strconv.Itoa(cleanupMaxMB)); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+			return
+		}
+	}
+	if req.LiquidGlassEnabled != nil {
+		if err := h.db.SetSetting(settingLiquidGlassEnabled, strconv.FormatBool(*req.LiquidGlassEnabled)); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
 			return
 		}
