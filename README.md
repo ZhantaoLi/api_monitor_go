@@ -1,11 +1,15 @@
 ﻿# API Monitor (Go)
 
-`API Monitor (Go)` 是 `api_monitor` 的 Go 版本实现，用于批量管理 API 渠道并周期性执行模型检测。
+`API Monitor (Go)` 是一个用于批量管理 API 渠道并周期性执行模型检测的工具。
 
 仓库地址：`https://github.com/ZhantaoLi/api_monitor_go`
 
 ![Repo Size](https://img.shields.io/github/repo-size/ZhantaoLi/api_monitor_go?style=flat-square&color=blue)
 ![Last Commit](https://img.shields.io/github/last-commit/ZhantaoLi/api_monitor_go?style=flat-square&color=blue)
+
+## 预览
+
+![Preview](preview.png)
 
 ## 功能概览
 
@@ -107,6 +111,8 @@ api_monitor_go/
 
 ## Linux Docker 运行
 
+Docker 镜像：`lming001/api-monitor-go:latest`
+
 `docker-compose.yml` 默认使用固定镜像版本，可自行修改为 `latest`: `image: lming001/api-monitor-go:latest`
 
 启动命令：
@@ -151,6 +157,10 @@ $env:GOCACHE="$PWD\.gocache"
 $env:GOMODCACHE="$PWD\.gomodcache"
 go run .
 ```
+
+默认访问地址：
+
+- `http://127.0.0.1:8081/`
 
 ## 鉴权说明
 
