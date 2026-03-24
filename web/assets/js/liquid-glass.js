@@ -68,10 +68,10 @@
         border-radius: 150px;
         box-shadow:
           0 4px 8px rgba(0, 0, 0, 0.25),
-          0 -10px 25px inset rgba(255, 255, 255, 0.15),
-          0 -1px 4px 1px inset rgba(255, 255, 255, 0.74);
+          0 -10px 25px inset var(--lens-inner-shadow-1),
+          0 -1px 4px 1px inset var(--lens-inner-shadow-2);
         cursor: grab;
-        backdrop-filter: url(#${this.id}_filter) blur(0.25px) brightness(1.05) saturate(1.05);
+        backdrop-filter: url(#${this.id}_filter) blur(0.15px) brightness(1.05) saturate(1.05);
         z-index: 9999;
         pointer-events: auto;
       `;
@@ -385,10 +385,10 @@
       // Apply the generated filter + native blur to the backdrop-filter!
       // This is crucial: we combine our SVG refraction filter with a native background blur/brightness
       this.element.style.setProperty('backdrop-filter', 
-        `url(#${this.id}_filter) blur(0.25px) brightness(1.05) saturate(1.05)`, 'important'
+        `url(#${this.id}_filter) blur(0.15px) brightness(1.05) saturate(1.05)`, 'important'
       );
       this.element.style.setProperty('-webkit-backdrop-filter', 
-        `url(#${this.id}_filter) blur(0.25px) brightness(1.05) saturate(1.05)`, 'important'
+        `url(#${this.id}_filter) blur(0.15px) brightness(1.05) saturate(1.05)`, 'important'
       );
       // Remove the old CSS 'filter' map which warped the UI!
       this.element.style.setProperty('filter', 'none', 'important');
@@ -420,9 +420,9 @@
     window.liquidGlass = shader;
 
     // 2. Attach tailored optical liquid glass to all native UI components matching .liquid-glass
-    // document.querySelectorAll('.liquid-glass').forEach(el => {
-    //   new NativeLiquidGlass(el);
-    // });
+    document.querySelectorAll('.liquid-glass').forEach(el => {
+      new NativeLiquidGlass(el);
+    });
   });
 
 })();

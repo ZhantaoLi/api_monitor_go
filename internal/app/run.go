@@ -214,35 +214,29 @@ func initDatabase(cfg appConfig) (*Database, bool, int, string, string, bool) {
 		adminTokenGenerated
 }
 
-func setupRoutes(mux *http.ServeMux, h *Handlers, adminSessions *AdminSessionManager, webFS fs.FS, bus *SSEBus) {
+func setupRoutes(mux *http.ServeMux, h *Handlers, adminSessions *AdminSessionManager, webFS fs.FS, bus *SSEBus, pr *PageRenderer) {
 	webContent, err := fs.Sub(webFS, "web")
 	if err != nil {
 		log.Fatalf("failed to create sub filesystem for web/: %v", err)
 	}
 	staticFileServer := http.FileServer(http.FS(webContent))
 
-	// Static pages (no auth)
+	// Static pages (no auth) — rendered via Go templates
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			staticFileServer.ServeHTTP(w, r)
 			return
 		}
-		data, err := fs.ReadFile(webFS, "web/index.html")
-		if err != nil {
-			http.Error(w, "not found", 404)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
+		serveTemplatePage(pr, "index")(w, r)
 	})
-	mux.HandleFunc("GET /viewer.html", serveEmbeddedHTML(webFS, "web/log_viewer.html"))
-	mux.HandleFunc("GET /analysis.html", serveEmbeddedHTML(webFS, "web/analysis.html"))
-	mux.HandleFunc("GET /admin/login", serveEmbeddedHTML(webFS, "web/admin_login.html"))
-	mux.Handle("GET /admin.html", adminPageMiddleware(adminSessions, serveEmbeddedHTML(webFS, "web/admin.html")))
+	mux.HandleFunc("GET /viewer.html", serveTemplatePage(pr, "log_viewer"))
+	mux.HandleFunc("GET /analysis.html", serveTemplatePage(pr, "analysis"))
+	mux.HandleFunc("GET /admin/login", serveTemplatePage(pr, "admin_login"))
+	mux.Handle("GET /admin.html", adminPageMiddleware(adminSessions, serveTemplatePage(pr, "admin")))
 	mux.Handle("GET /admin", adminPageMiddleware(adminSessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin.html", http.StatusFound)
 	})))
-	mux.HandleFunc("GET /docs/proxy", serveEmbeddedHTML(webFS, "web/proxy_docs.html"))
+	mux.HandleFunc("GET /docs/proxy", serveTemplatePage(pr, "proxy_docs"))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(webContent))))
 
 	// Public API (no auth)
@@ -331,9 +325,12 @@ func Start(webFS fs.FS) {
 		log.Fatal("[main] admin panel token is empty")
 	}
 
+	// ---- Template renderer ----
+	pr := initPageRenderer(webFS)
+
 	h := &Handlers{db: db, monitor: monitor, bus: bus, admin: adminSessions}
 	mux := http.NewServeMux()
-	setupRoutes(mux, h, adminSessions, webFS, bus)
+	setupRoutes(mux, h, adminSessions, webFS, bus, pr)
 
 	// ---- Start HTTP server ----
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.port)

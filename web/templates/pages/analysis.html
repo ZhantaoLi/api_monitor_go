@@ -1,0 +1,402 @@
+{{define "extra_head"}}
+  <script defer src="/static/assets/js/liquid-glass.js"></script>
+
+  <!-- Phosphor Icons (duotone) -->
+  <link rel="stylesheet" href="/static/assets/vendor/phosphor-duotone.css">
+
+  <!-- Chart.js -->
+  <script src="/static/assets/vendor/chart.min.js"></script>
+  <!-- Google Fonts (local) -->
+  <link rel="stylesheet" href="/static/assets/vendor/google-fonts.css">
+
+  <style>
+    .analysis-latency-soft {
+      color: rgba(43, 152, 232, 0.6) !important;
+    }
+
+    .analysis-latency-strong {
+      color: #2b98e8 !important;
+    }
+  </style>
+  <!-- Page JS -->
+  <script src="/static/assets/js/analysis.js"></script>
+{{end}}
+
+{{define "content"}}
+  <!-- Navbar -->
+  <nav class="fixed top-0 w-full z-50 glass border-b border-zinc-300 dark:border-zinc-700 shadow-lg">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <!-- Logo -->
+        <div class="flex items-center gap-2 cursor-pointer" onclick="goBackToLogs()">
+          <i class="ph-bold ph-arrow-left text-xl text-neon-purple"></i>
+          <span class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-neon-purple to-neon-blue">
+            Back to <span class="font-normal text-zinc-600 dark:text-zinc-400">Logs</span>
+          </span>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-4">
+          <button onclick="refreshData()"
+            class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2">
+            <i class="ph-bold ph-arrows-clockwise"></i>
+            Refresh
+          </button>
+          <button id="themeToggle"
+            class="p-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all border border-zinc-300 dark:border-zinc-700">
+            <i class="ph-bold ph-moon"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 pt-24 space-y-8 opacity-0 translate-y-4 transition-all duration-700 pb-32"
+    id="mainContainer">
+
+    <!-- Loading State -->
+    <div id="loadingState" class="text-center py-20 hidden">
+      <div class="inline-flex items-center justify-center w-16 h-16 mb-4">
+        <i class="ph-duotone ph-spinner animate-spin text-4xl text-neon-purple"></i>
+      </div>
+      <p class="text-zinc-500">Loading logs...</p>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="space-y-8">
+
+      <!-- Summary stats -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Card 1: Total Tests -->
+        <div
+          class="glass p-6 rounded-2xl relative overflow-hidden group hover:bg-white/50 dark:hover:bg-zinc-800/50 transition-colors">
+          <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <i class="ph-duotone ph-list-checks text-6xl text-blue-500"></i>
+          </div>
+          <p class="text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Total Tests
+          </p>
+          <h3 class="text-4xl font-bold mt-2 text-zinc-900 dark:text-white" id="statTotal">0</h3>
+          <div class="mt-2 text-xs text-blue-400 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+            Records processed
+          </div>
+        </div>
+
+        <!-- Card 2: Success Rate -->
+        <div
+          class="glass p-6 rounded-2xl relative overflow-hidden group hover:bg-white/50 dark:hover:bg-zinc-800/50 transition-colors">
+          <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <i class="ph-duotone ph-check-circle text-6xl text-green-500"></i>
+          </div>
+          <p class="text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Success
+            Rate</p>
+          <h3 class="text-4xl font-bold mt-2 text-green-400" id="statSuccessRate">0%</h3>
+          <div class="mt-2 text-xs text-green-500 flex items-center gap-1">
+            <span id="statSuccessCount">0</span> successful
+          </div>
+        </div>
+
+        <!-- Card 3: Avg Latency (Success) -->
+        <div
+          class="glass p-6 rounded-2xl relative overflow-hidden group hover:bg-white/50 dark:hover:bg-zinc-800/50 transition-colors">
+          <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <i class="ph-duotone ph-lightning text-6xl text-yellow-500"></i>
+          </div>
+          <p class="text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Avg Latency
+            (Success)</p>
+          <h3 class="text-4xl font-bold mt-2 analysis-latency-strong" id="statLatency">0ms</h3>
+          <div class="mt-2 text-xs text-yellow-500 flex items-center gap-1">
+            Across successful calls
+          </div>
+        </div>
+
+        <!-- Card 4: Protocols -->
+        <div
+          class="glass p-6 rounded-2xl relative overflow-hidden group hover:bg-white/50 dark:hover:bg-zinc-800/50 transition-colors">
+          <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <i class="ph-duotone ph-globe text-6xl text-purple-500"></i>
+          </div>
+          <p class="text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Protocols
+          </p>
+          <h3 class="text-4xl font-bold mt-2 text-purple-400" id="statProtocols">0</h3>
+          <div class="mt-2 text-xs text-purple-500 flex items-center gap-1">
+            Distinct protocols found
+          </div>
+        </div>
+      </div>
+
+      <!-- Analytics: Charts Row 1 (Latency + Status) -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Latency Chart -->
+        <div class="lg:col-span-2 glass p-6 rounded-2xl flex flex-col h-80">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold flex items-center gap-2 text-zinc-900 dark:text-white">
+              <i class="ph-duotone ph-chart-bar analysis-latency-soft"></i>
+              Latency by Model (Successful Only)
+            </h3>
+          </div>
+          <div class="flex-1 relative w-full h-full min-h-0">
+            <canvas id="latencyChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Status Donut -->
+        <div class="glass p-6 rounded-2xl flex flex-col h-80">
+          <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-zinc-900 dark:text-white">
+            <i class="ph-duotone ph-chart-pie-slice text-neon-pink"></i>
+            Success vs Failures
+          </h3>
+          <div class="flex-1 relative w-full h-full min-h-0 flex items-center justify-center">
+            <canvas id="statusChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analytics: Charts Row 2 (Timeline) -->
+      <div class="glass p-6 rounded-2xl">
+        <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-zinc-900 dark:text-white">
+          <i class="ph-duotone ph-trend-up text-neon-green"></i>
+          Request Timeline (Latency & Status)
+        </h3>
+        <div class="w-full h-64">
+          <canvas id="timelineChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Analytics: Data Row (Model Table + Errors) -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Model Performance Table -->
+        <div class="lg:col-span-2 glass p-6 rounded-2xl overflow-hidden flex flex-col h-96">
+          <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-zinc-900 dark:text-white">
+            <i class="ph-duotone ph-table analysis-latency-soft"></i>
+            Model Performance Analysis
+          </h3>
+          <div class="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar">
+            <table class="w-full text-left text-sm relative">
+              <thead
+                class="bg-zinc-100/50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 sticky top-0 z-10 backdrop-blur-md">
+                <tr>
+                  <th class="p-3 rounded-l-lg">Model</th>
+                  <th class="p-3">Requests</th>
+                  <th class="p-3">Success Rate</th>
+                  <th class="p-3">Avg Latency</th>
+                  <th class="p-3">Avg TTFB</th>
+                  <th class="p-3">Avg Ping</th>
+                  <th class="p-3">P95 Latency</th>
+                  <th class="p-3 rounded-r-lg">Errors</th>
+                </tr>
+              </thead>
+              <tbody id="modelAnalyticsBody"
+                class="divide-y divide-zinc-200 dark:divide-zinc-700 text-zinc-700 dark:text-zinc-300">
+                <!-- JS Injected -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Top Errors -->
+        <div class="glass p-6 rounded-2xl flex flex-col h-96">
+          <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-zinc-900 dark:text-white">
+            <i class="ph-duotone ph-warning-circle text-red-500"></i>
+            Top Errors
+          </h3>
+          <div class="flex-1 relative w-full h-full overflow-y-auto custom-scrollbar">
+            <ul id="errorList" class="space-y-2 text-xs"></ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Floating Filter Bar (Fixed Bottom Center) -->
+      <div class="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-4xl px-4 pointer-events-none">
+        <div
+          class="liquid-glass p-3 flex flex-wrap items-center justify-between gap-4 pointer-events-auto border border-white/20 dark:border-white/10">
+
+          <!-- Filters Group -->
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <div
+              class="flex items-center gap-2 bg-black/5 dark:bg-white/5 px-3 py-2 rounded-xl transition-colors hover:bg-black/10 dark:hover:bg-white/10 border border-zinc-200/50 dark:border-white/10">
+              <i class="ph-bold ph-funnel text-zinc-500 dark:text-zinc-400"></i>
+              <div class="relative">
+                <button id="filterProtocolBtn" type="button"
+                  class="bg-transparent border-none text-sm text-zinc-900 dark:text-zinc-200 cursor-pointer outline-none py-0 pr-4">
+                  All Protocols
+                </button>
+                <div id="filterProtocolMenu"
+                  class="absolute bottom-full mb-2 left-0 z-50 hidden min-w-[180px] rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-xl overflow-hidden">
+                </div>
+              </div>
+              <select id="filterProtocol" class="sr-only">
+                <option value="all">All Protocols</option>
+              </select>
+            </div>
+
+            <div
+              class="flex items-center gap-2 bg-black/5 dark:bg-white/5 px-3 py-2 rounded-xl transition-colors hover:bg-black/10 dark:hover:bg-white/10 border border-zinc-200/50 dark:border-white/10">
+              <i class="ph-bold ph-check-circle text-zinc-500 dark:text-zinc-400"></i>
+              <select id="filterStatus"
+                class="bg-transparent border-none text-sm focus:ring-0 text-zinc-900 dark:text-zinc-200 cursor-pointer outline-none [&>option]:bg-white [&>option]:text-zinc-900 dark:[&>option]:bg-zinc-900 dark:[&>option]:text-zinc-200 py-0 pr-8">
+                <option value="all">All Status</option>
+                <option value="success">Success</option>
+                <option value="error">Failure</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Search Input -->
+          <div class="flex-1 min-w-[200px]">
+            <div class="relative group">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="ph-bold ph-magnifying-glass text-zinc-400 transition-colors"></i>
+              </div>
+              <input type="text" id="searchInput" placeholder="Search logs (model, content, error)..."
+                class="block w-full pl-10 pr-4 py-2 bg-black/5 dark:bg-white/5 text-zinc-900 dark:text-white rounded-xl border border-transparent focus:border-zinc-200/50 dark:focus:border-white/10 focus:ring-0 placeholder-zinc-500 dark:placeholder-zinc-500 outline-none transition-all">
+            </div>
+          </div>
+
+          <!-- Scroll to Top (Optional, fits nicely here) -->
+          <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})"
+            class="p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-zinc-500 dark:text-zinc-400 transition-colors">
+            <i class="ph-bold ph-arrow-up"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Data Table -->
+      <div class="glass rounded-2xl border border-zinc-300 dark:border-zinc-700 overflow-hidden shadow-2xl">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr
+                class="bg-zinc-100/50 dark:bg-zinc-800/50 border-b border-zinc-200/50 dark:border-zinc-700/50 text-zinc-600 dark:text-zinc-400 text-xs uppercase tracking-wider whitespace-nowrap">
+                <th class="p-4 w-12 text-center">#</th>
+                <th class="p-4 w-24 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('timestamp')">
+                  Time <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 w-24 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('status')">
+                  Status <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('protocol')">
+                  Protocol <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('model')">
+                  Model <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 w-32 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('latency')">
+                  Latency <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 w-28 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('ttfb')">
+                  TTFB <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 w-28 cursor-pointer hover:text-zinc-900 dark:hover:text-white group"
+                  onclick="sortTable('ping')">
+                  Ping <i class="ph-bold ph-caret-up-down opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </th>
+                <th class="p-4 w-32">Config</th>
+                <th class="p-4 w-12"></th> <!-- Expand Action -->
+              </tr>
+            </thead>
+            <tbody id="logTableBody"
+              class="text-sm text-zinc-700 dark:text-zinc-300 divide-y divide-zinc-200/50 dark:divide-zinc-700/50">
+              <!-- Rows will be injected here -->
+            </tbody>
+          </table>
+        </div>
+        <!-- Pagination (Simple) -->
+        <div
+          class="p-4 bg-zinc-50 dark:bg-zinc-800/30 border-t border-zinc-200 dark:border-zinc-700 flex justify-between items-center text-xs text-zinc-500">
+          <span id="showingCount">Showing 0 records</span>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Detail Modal -->
+  <div id="detailModal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closeModal()"></div>
+    <div
+      class="absolute inset-y-0 right-0 w-full max-w-2xl bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl transform transition-transform duration-300 translate-x-full"
+      id="modalPanel">
+      <div class="h-full flex flex-col">
+        <div
+          class="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-white dark:bg-zinc-900 z-10">
+          <div>
+            <h2 class="text-xl font-bold text-zinc-900 dark:text-white">Log Details</h2>
+            <span id="modalId" class="text-xs font-mono text-zinc-500">ID: ---</span>
+          </div>
+          <button onclick="closeModal()"
+            class="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
+            <i class="ph-bold ph-x"></i>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+          <!-- Status Header inside Modal -->
+          <div id="modalHeader"
+            class="flex items-center justify-between p-4 rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 bg-zinc-50/50 dark:bg-zinc-800/20">
+            <!-- Injected via JS -->
+          </div>
+
+          <!-- Meta Data Grid -->
+          <div class="grid grid-cols-2 gap-4">
+            <div class="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50">
+              <span class="block text-xs uppercase text-zinc-500 mb-1">Protocol</span>
+              <span id="modalProtocol" class="font-mono text-zinc-900 dark:text-white">---</span>
+            </div>
+            <div class="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50">
+              <span class="block text-xs uppercase text-zinc-500 mb-1">Model</span>
+              <span id="modalModel" class="font-mono text-zinc-900 dark:text-white">---</span>
+            </div>
+            <div class="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50">
+              <span class="block text-xs uppercase text-zinc-500 mb-1">Latency</span>
+              <span id="modalLatency" class="font-mono analysis-latency-strong">---</span>
+            </div>
+            <div class="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50">
+              <span class="block text-xs uppercase text-zinc-500 mb-1">Stream</span>
+              <span id="modalStream" class="font-mono text-zinc-900 dark:text-white">---</span>
+            </div>
+          </div>
+
+          <!-- Error Block -->
+          <div id="modalErrorContainer" class="hidden">
+            <h3 class="text-sm font-bold text-red-500 mb-2">Error Message</h3>
+            <div class="bg-red-900/10 border border-red-500/20 rounded-lg p-4">
+              <pre id="modalError" class="text-red-400 text-xs overflow-x-auto">---</pre>
+            </div>
+          </div>
+
+          <!-- Tool Calls -->
+          <div>
+            <h3 class="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-2 flex items-center gap-2">
+              <i class="ph-duotone ph-wrench"></i> Tool Calls
+            </h3>
+            <div
+              class="bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 p-0 overflow-hidden">
+              <pre id="modalToolCalls" class="text-xs text-blue-600 dark:text-blue-300 p-4 overflow-x-auto">[]</pre>
+            </div>
+          </div>
+
+          <!-- Full Content -->
+          <div>
+            <h3 class="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-2 flex items-center gap-2">
+              <i class="ph-duotone ph-text-aa"></i> Full Response Content
+            </h3>
+            <div
+              class="bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 p-0 overflow-hidden">
+              <pre id="modalContent" class="text-xs text-zinc-700 dark:text-green-300 p-4 overflow-x-auto">...</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {{template "svg_filter"}}
+{{end}}
