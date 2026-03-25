@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -186,6 +187,60 @@ func TestAdminSessionManager_UpdatePasswordKeepsCurrentSession(t *testing.T) {
 	}
 	if _, ok := mgr.Login("admin-pass"); ok {
 		t.Fatalf("old password should no longer work")
+	}
+}
+
+func TestSetAdminSessionCookie_UsesSecureForTLSRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "https://example.com/api/admin/login", nil)
+	req.TLS = &tls.ConnectionState{}
+	rr := httptest.NewRecorder()
+
+	SetAdminSessionCookie(rr, req, "session-token", time.Hour)
+
+	res := rr.Result()
+	cookies := res.Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected 1 cookie, got=%d", len(cookies))
+	}
+	if !cookies[0].Secure {
+		t.Fatalf("expected secure cookie for TLS request")
+	}
+}
+
+func TestSetAdminSessionCookie_UsesSecureForForwardedHTTPSRequest(t *testing.T) {
+	SetTrustProxyHeaders(true)
+	t.Cleanup(func() { SetTrustProxyHeaders(true) })
+
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/api/admin/login", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+
+	SetAdminSessionCookie(rr, req, "session-token", time.Hour)
+
+	res := rr.Result()
+	cookies := res.Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected 1 cookie, got=%d", len(cookies))
+	}
+	if !cookies[0].Secure {
+		t.Fatalf("expected secure cookie for forwarded https request")
+	}
+}
+
+func TestClearAdminSessionCookie_UsesSecureForTLSRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "https://example.com/api/admin/logout", nil)
+	req.TLS = &tls.ConnectionState{}
+	rr := httptest.NewRecorder()
+
+	ClearAdminSessionCookie(rr, req)
+
+	res := rr.Result()
+	cookies := res.Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected 1 cookie, got=%d", len(cookies))
+	}
+	if !cookies[0].Secure {
+		t.Fatalf("expected secure cookie on clear for TLS request")
 	}
 }
 

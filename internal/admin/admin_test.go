@@ -90,8 +90,8 @@ func TestAdminPatchSettings_UpdatesAuthTokensAndBus(t *testing.T) {
 	if got := store.settings[settingProxyMasterToken]; got != "proxy-new" {
 		t.Fatalf("proxy master token not persisted: %q", got)
 	}
-	if !bus.published {
-		t.Fatalf("expected auth_changed event")
+	if !bus.hasEvent("auth_changed") {
+		t.Fatalf("expected auth_changed event, got=%v", bus.events)
 	}
 }
 
@@ -105,7 +105,8 @@ func TestAdminChannelHandlers(t *testing.T) {
 		},
 	}
 	mon := &fakeMonitor{cleanupEnabled: true, cleanupMB: 500, models: []string{"a"}}
-	h := &AdminHandler{Store: store, Monitor: mon, Sessions: auth.NewAdminSessionManager("admin", time.Hour)}
+	bus := &fakeBus{}
+	h := &AdminHandler{Store: store, Monitor: mon, Bus: bus, Sessions: auth.NewAdminSessionManager("admin", time.Hour)}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/channels", nil)
 	req.AddCookie(&http.Cookie{Name: AdminSessionCookieName, Value: mustLogin(t, h.Sessions, "admin"), Path: "/"})
@@ -123,6 +124,9 @@ func TestAdminChannelHandlers(t *testing.T) {
 	h.AdminPatchChannelAdvanced(rr2, req2)
 	if rr2.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d body=%s", rr2.Code, rr2.Body.String())
+	}
+	if !bus.hasEvent("target_updated") {
+		t.Fatalf("expected target_updated after advanced patch, got=%v", bus.events)
 	}
 
 	req3 := httptest.NewRequest(http.MethodGet, "/api/admin/channels/1/models", nil)
@@ -142,6 +146,15 @@ func TestAdminChannelHandlers(t *testing.T) {
 	h.AdminPatchChannelModels(rr4, req4)
 	if rr4.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d body=%s", rr4.Code, rr4.Body.String())
+	}
+	count := 0
+	for _, event := range bus.events {
+		if event == "target_updated" {
+			count++
+		}
+	}
+	if count < 2 {
+		t.Fatalf("expected target_updated after both admin channel mutations, got=%v", bus.events)
 	}
 }
 
@@ -263,9 +276,17 @@ func (f *fakeMonitor) FetchModels(target *Target) ([]string, error) {
 	return append([]string(nil), f.models...), nil
 }
 
-type fakeBus struct{ published bool }
+type fakeBus struct{ events []string }
 
-func (f *fakeBus) Publish(event, data string) { f.published = true }
+func (f *fakeBus) Publish(event, data string) { f.events = append(f.events, event) }
+func (f *fakeBus) hasEvent(event string) bool {
+	for _, item := range f.events {
+		if item == event {
+			return true
+		}
+	}
+	return false
+}
 
 func mustLogin(t *testing.T, mgr *auth.AdminSessionManager, password string) string {
 	t.Helper()

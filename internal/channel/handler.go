@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -19,6 +20,7 @@ type Store interface {
 	CreateTarget(payload map[string]any) (*storesqlite.Target, error)
 	UpdateTarget(targetID int, updates map[string]any) (*storesqlite.Target, error)
 	DeleteTarget(targetID int) (bool, error)
+	ReorderTargets(targetIDs []int) error
 	GetLatestModelStatuses(targetID int) ([]storesqlite.ModelStatus, error)
 	GetLatestModelStatusesBatch(targetIDs []int) (map[int][]storesqlite.ModelStatus, error)
 	GetModelHistoriesBatch(targetIDs []int, points int) (map[int]map[string][]storesqlite.ModelHistoryPoint, error)
@@ -35,13 +37,18 @@ type Monitor interface {
 	FetchModels(target *storesqlite.Target) ([]string, error)
 }
 
+type EventBus interface {
+	Publish(event, data string)
+}
+
 type Handler struct {
 	store   Store
 	monitor Monitor
+	bus     EventBus
 }
 
-func NewHandler(store Store, monitor Monitor) *Handler {
-	return &Handler{store: store, monitor: monitor}
+func NewHandler(store Store, monitor Monitor, bus EventBus) *Handler {
+	return &Handler{store: store, monitor: monitor, bus: bus}
 }
 
 func pathID(r *http.Request) (int, bool) {
@@ -313,6 +320,20 @@ func (h *Handler) targetBasicFields(t *storesqlite.Target, r *http.Request) map[
 	return h.targetRuntimeFieldsWithData(t, running, nil, role)
 }
 
+func (h *Handler) publishTargetUpdated(action string, targetID int) {
+	if h.bus == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action":    action,
+		"target_id": targetID,
+	})
+	if err != nil {
+		return
+	}
+	h.bus.Publish("target_updated", string(payload))
+}
+
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	auth.WriteJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
@@ -506,6 +527,7 @@ func (h *Handler) PatchTargetModels(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
 	}
+	h.publishTargetUpdated("models_updated", updated.ID)
 	auth.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "item": h.targetRuntimeFields(updated, r)})
 }
 
@@ -531,6 +553,7 @@ func (h *Handler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
 		return
 	}
+	h.publishTargetUpdated("created", target.ID)
 	auth.WriteJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(target, r)})
 }
 
@@ -570,6 +593,7 @@ func (h *Handler) PatchTarget(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
 	}
+	h.publishTargetUpdated("updated", updated.ID)
 	auth.WriteJSON(w, http.StatusOK, map[string]any{"item": h.targetRuntimeFields(updated, r)})
 }
 
@@ -600,6 +624,34 @@ func (h *Handler) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
 	}
+	h.publishTargetUpdated("deleted", id)
+	auth.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *Handler) ReorderTargets(w http.ResponseWriter, r *http.Request) {
+	if auth.AuthRoleFromRequest(r) != auth.AuthRoleAdmin {
+		auth.WriteJSON(w, http.StatusForbidden, map[string]any{"detail": "admin token required"})
+		return
+	}
+
+	var req struct {
+		TargetIDs []int `json:"target_ids"`
+	}
+	if err := auth.ReadJSON(r, &req); err != nil {
+		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
+		return
+	}
+	if len(req.TargetIDs) == 0 {
+		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "target_ids must not be empty"})
+		return
+	}
+
+	if err := h.store.ReorderTargets(req.TargetIDs); err != nil {
+		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
+		return
+	}
+
+	h.publishTargetUpdated("reordered", 0)
 	auth.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

@@ -41,7 +41,7 @@ func (h *AdminHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.GlobalAuthFailureProtector.Clear(auth.FailureScopeLogin, clientIP)
-	auth.SetAdminSessionCookie(w, token, h.Sessions.TTL())
+	auth.SetAdminSessionCookie(w, r, token, h.Sessions.TTL())
 	auth.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -49,7 +49,7 @@ func (h *AdminHandler) AdminLogout(w http.ResponseWriter, r *http.Request) {
 	if h.Sessions != nil {
 		h.Sessions.Logout(auth.AdminSessionTokenFromRequest(r))
 	}
-	auth.ClearAdminSessionCookie(w)
+	auth.ClearAdminSessionCookie(w, r)
 	auth.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -253,6 +253,9 @@ func (h *AdminHandler) AdminPatchChannelAdvanced(w http.ResponseWriter, r *http.
 		auth.WriteJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
 	}
+	if h.Bus != nil {
+		h.Bus.Publish("target_updated", `{"action":"admin_advanced_updated","target_id":`+strconv.Itoa(updated.ID)+`}`)
+	}
 	auth.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "item": adminChannelItem(updated)})
 }
 
@@ -351,6 +354,9 @@ func (h *AdminHandler) AdminPatchChannelModels(w http.ResponseWriter, r *http.Re
 	if updated == nil {
 		auth.WriteJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
 		return
+	}
+	if h.Bus != nil {
+		h.Bus.Publish("target_updated", `{"action":"admin_models_updated","target_id":`+strconv.Itoa(updated.ID)+`}`)
 	}
 	auth.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "item": adminChannelItem(updated)})
 }

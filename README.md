@@ -10,6 +10,7 @@
 ## 预览
 
 ![Preview](preview.png)
+![Preview Dark](preview-dark.png)
 
 ## 功能概览
 

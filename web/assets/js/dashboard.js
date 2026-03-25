@@ -423,7 +423,10 @@ function dashboard() {
         dragSourceId: null,
 
         get canDrag() {
-            return !this.search && this.filterProtocol === 'all' && this.filterStatus === 'all';
+            return this.authRole === 'admin' &&
+                !this.search &&
+                this.filterProtocol === 'all' &&
+                this.filterStatus === 'all';
         },
 
         handleDragStart(e, id) {
@@ -461,9 +464,23 @@ function dashboard() {
             }
         },
 
-        handleDrop(e, targetId) {
+        async persistTargetOrder() {
+            const targetIds = this.targets.map(t => t.id);
+            const res = await Utils.authFetch('/api/targets/reorder', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_ids: targetIds })
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || 'Failed to save target order');
+            }
+        },
+
+        async handleDrop(e, targetId) {
             if (!this.canDrag || !this.dragSourceId || this.dragSourceId === targetId) return;
 
+            const previousTargets = [...this.targets];
             const fromIndex = this.targets.findIndex(t => t.id === this.dragSourceId);
             const toIndex = this.targets.findIndex(t => t.id === targetId);
 
@@ -472,6 +489,13 @@ function dashboard() {
                 const [item] = this.targets.splice(fromIndex, 1);
                 // Insert at new position
                 this.targets.splice(toIndex, 0, item);
+                try {
+                    await this.persistTargetOrder();
+                } catch (err) {
+                    console.error('Failed to persist target order', err);
+                    this.targets = previousTargets;
+                    alert(err.message || 'Failed to save target order');
+                }
             }
             this.dragSourceId = null;
         },

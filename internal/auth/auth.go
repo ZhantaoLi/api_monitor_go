@@ -413,26 +413,48 @@ func AdminSessionTokenFromRequest(r *http.Request) string {
 	return strings.TrimSpace(c.Value)
 }
 
-func SetAdminSessionCookie(w http.ResponseWriter, token string, ttl time.Duration) {
+func requestIsSecure(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	if !trustProxyHeaders.Load() {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		return true
+	}
+	if forwarded := strings.ToLower(strings.TrimSpace(r.Header.Get("Forwarded"))); strings.Contains(forwarded, "proto=https") {
+		return true
+	}
+	if cfVisitor := strings.ToLower(strings.TrimSpace(r.Header.Get("CF-Visitor"))); strings.Contains(cfVisitor, `"scheme":"https"`) {
+		return true
+	}
+	return false
+}
+
+func SetAdminSessionCookie(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     AdminSessionCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   false,
+		Secure:   requestIsSecure(r),
 		MaxAge:   int(ttl.Seconds()),
 	})
 }
 
-func ClearAdminSessionCookie(w http.ResponseWriter) {
+func ClearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     AdminSessionCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   false,
+		Secure:   requestIsSecure(r),
 		MaxAge:   -1,
 	})
 }

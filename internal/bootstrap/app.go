@@ -116,6 +116,7 @@ func setupRoutes(
 
 	mux.Handle("GET /api/dashboard", auth.AuthAnyMiddleware(http.HandlerFunc(channelHandler.Dashboard)))
 	mux.Handle("GET /api/targets", auth.AuthAnyMiddleware(http.HandlerFunc(channelHandler.ListTargets)))
+	mux.Handle("PATCH /api/targets/reorder", auth.AuthAnyMiddleware(http.HandlerFunc(channelHandler.ReorderTargets)))
 	mux.Handle("GET /api/targets/{id}", auth.AuthAnyMiddleware(http.HandlerFunc(channelHandler.GetTarget)))
 	mux.Handle("POST /api/targets", auth.AuthAnyMiddleware(http.HandlerFunc(channelHandler.CreateTarget)))
 	mux.Handle("PATCH /api/targets/{id}", auth.AuthAnyMiddleware(http.HandlerFunc(channelHandler.PatchTarget)))
@@ -197,7 +198,7 @@ func Start(webFS fs.FS) {
 		log.Fatalf("template renderer init failed: %v", err)
 	}
 
-	channelHandler := channel.NewHandler(db, monitorSvc)
+	channelHandler := channel.NewHandler(db, monitorSvc, bus)
 	adminHandler := admin.NewHandler(adminStoreAdapter{db: db}, adminMonitorAdapter{monitor: monitorSvc}, bus, sessions)
 	proxyHandler := proxy.NewHandler(proxyStoreAdapter{db: db})
 

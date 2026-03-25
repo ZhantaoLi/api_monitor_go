@@ -31,7 +31,7 @@ func NewDatabase(path string) (*Database, error) {
 	if err != nil {
 		return nil, err
 	}
-// WAL allows concurrent reads; increase pool size to improve read concurrency.
+	// WAL allows concurrent reads; increase pool size to improve read concurrency.
 	conn.SetMaxOpenConns(4)
 	if _, err := conn.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		conn.Close()
@@ -532,13 +532,13 @@ func scanModelRow(r interface{ Scan(dest ...any) error }) (*ModelRow, error) {
 // CRUD -- Targets
 // ---------------------------------------------------------------------------
 
-// ListTargets returns all targets ordered by creation time (newest first).
+// ListTargets returns all targets ordered by configured sort order.
 func (d *Database) ListTargets() ([]Target, error) {
 	conn := d.conn
 
 	rows, err := conn.Query(`
 		SELECT ` + targetColumns + ` FROM targets
-		ORDER BY created_at DESC, id DESC
+		ORDER BY sort_order ASC, id ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -630,7 +630,7 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 
 	var setClauses []string
 	var args []any
-// Sort keys to keep SQL stable and help prepared statement caching.
+	// Sort keys to keep SQL stable and help prepared statement caching.
 	sortedKeys := make([]string, 0, len(updates))
 	for key := range updates {
 		if allowed[key] {
@@ -675,7 +675,82 @@ func (d *Database) UpdateTarget(targetID int, updates map[string]any) (*Target, 
 	return d.GetTarget(targetID)
 }
 
-// ReorderItems updates the sort_order for multiple targets in a single transaction.
+// ReorderTargets updates the sort_order for the provided targets and appends any
+// existing targets not included in targetIDs while preserving their relative order.
+func (d *Database) ReorderTargets(targetIDs []int) error {
+	if len(targetIDs) == 0 {
+		return fmt.Errorf("target_ids must not be empty")
+	}
+
+	seen := make(map[int]struct{}, len(targetIDs))
+	for _, id := range targetIDs {
+		if id < 1 {
+			return fmt.Errorf("target_ids must contain positive integers")
+		}
+		if _, ok := seen[id]; ok {
+			return fmt.Errorf("target_ids must not contain duplicates")
+		}
+		seen[id] = struct{}{}
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.Query(`SELECT id FROM targets ORDER BY sort_order ASC, id ASC`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	existingOrder := make([]int, 0)
+	existingSet := make(map[int]struct{})
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		existingOrder = append(existingOrder, id)
+		existingSet[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(existingOrder) == 0 {
+		return fmt.Errorf("no targets found")
+	}
+
+	finalOrder := make([]int, 0, len(existingOrder))
+	for _, id := range targetIDs {
+		if _, ok := existingSet[id]; !ok {
+			return fmt.Errorf("target %d not found", id)
+		}
+		finalOrder = append(finalOrder, id)
+	}
+	for _, id := range existingOrder {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		finalOrder = append(finalOrder, id)
+	}
+
+	now := float64(time.Now().UnixMilli()) / 1000.0
+	for idx, id := range finalOrder {
+		if _, err := tx.Exec(
+			`UPDATE targets SET sort_order = ?, updated_at = ? WHERE id = ?`,
+			idx+1, now, id,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
 
 // DeleteTarget removes a target by id.
 func (d *Database) DeleteTarget(targetID int) (bool, error) {
