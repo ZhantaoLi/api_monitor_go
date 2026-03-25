@@ -39,6 +39,8 @@ var routeRules = []struct {
 	{regexp.MustCompile(`gpt-5\.[123]`), "responses"},
 }
 
+const detectionResponseBodyMaxBytes = 5 << 20
+
 // ---------------------------------------------------------------------------
 // HttpResult
 // ---------------------------------------------------------------------------
@@ -211,7 +213,7 @@ func httpJSON(client *http.Client, method, reqURL string, headers map[string]str
 	}
 	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, detectionResponseBodyMaxBytes))
 	elapsedMs := int(time.Since(start).Milliseconds())
 	text := string(raw)
 

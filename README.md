@@ -119,7 +119,6 @@ api_monitor_go/
 │   └── registry.db             # SQLite 主数据库
 ├── internal/
 │   ├── admin/                  # 管理后台 handler、设置、资源接口
-│   ├── app/                    # 当前为空的历史迁移目录，可忽略
 │   ├── auth/                   # Bearer 鉴权、管理员会话、限流、防爆破
 │   ├── bootstrap/              # 启动装配、配置加载、路由注册
 │   ├── channel/                # 渠道 CRUD、排序、模型选择、日志接口
