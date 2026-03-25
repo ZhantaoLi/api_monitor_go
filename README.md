@@ -206,7 +206,7 @@ api_monitor_go/
   - 同时作为后台登录密码
 - `API_MONITOR_TOKEN_VISITOR`
   - 访客 token
-  - 主要用于只读访问
+  - 用于访客角色访问
   - 某些渠道操作是否允许，还要看该渠道的
     `visitor_channel_actions_enabled`
 
@@ -234,7 +234,7 @@ api_monitor_go/
 - `visitor_mode_enabled = true`
 - 且未配置 `API_MONITOR_TOKEN_VISITOR`
 
-那么访客访问会退化为匿名只读模式。
+那么访客访问会退化为匿名访客模式，并继承访客角色权限语义。
 
 默认部署时建议：
 
