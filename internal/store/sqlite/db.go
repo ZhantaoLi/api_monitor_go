@@ -1021,6 +1021,34 @@ func (d *Database) UpdateTargetAfterRun(targetID int, lastRunAt float64, lastSta
 	return err
 }
 
+// PruneRunsForTarget keeps only the newest keep runs for the target and relies
+// on ON DELETE CASCADE to remove related run_models rows.
+func (d *Database) PruneRunsForTarget(targetID, keep int) (int64, error) {
+	if keep < 1 {
+		keep = 1
+	}
+
+	d.mu.Lock()
+	res, err := d.conn.Exec(`
+		DELETE FROM runs
+		WHERE target_id = ?
+		  AND id IN (
+			SELECT id FROM (
+				SELECT id
+				FROM runs
+				WHERE target_id = ?
+				ORDER BY started_at DESC, id DESC
+				LIMIT -1 OFFSET ?
+			)
+		  )
+	`, targetID, targetID, keep)
+	d.mu.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // InsertModelRows bulk-inserts detection results.
 func (d *Database) InsertModelRows(runID, targetID int, rows []DetectionResult) error {
 	if len(rows) == 0 {

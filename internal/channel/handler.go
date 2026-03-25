@@ -739,7 +739,7 @@ func (h *Handler) GetLogs(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid scope"})
 		return
 	}
-	limit := queryInt(r, "limit", 5000, 1, 20000)
+	limit := queryInt(r, "limit", 500, 1, 5000)
 
 	var chosenRunID *int
 	var chosenRun *storesqlite.Run

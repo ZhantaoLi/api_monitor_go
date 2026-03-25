@@ -40,6 +40,7 @@ var routeRules = []struct {
 }
 
 const detectionResponseBodyMaxBytes = 5 << 20
+const runRetentionPerTarget = 60
 
 // ---------------------------------------------------------------------------
 // HttpResult
@@ -646,6 +647,11 @@ func (ms *MonitorService) runTarget(target *sqlite.Target) {
 		log.Printf("[monitor] create run failed target=%s: %v", target.Name, err)
 		return
 	}
+	defer func() {
+		if err := ms.pruneTargetRuns(target.ID); err != nil {
+			log.Printf("[monitor] prune old runs failed target=%s id=%d: %v", target.Name, target.ID, err)
+		}
+	}()
 	markRunError := func(lastStatus string, total, success, fail int, runErr error) {
 		endedAt := float64(time.Now().UnixMilli()) / 1000.0
 		errStr := runErr.Error()
@@ -794,6 +800,20 @@ func (ms *MonitorService) runTarget(target *sqlite.Target) {
 		"fail":        failCount,
 	})
 	ms.emitEvent("run_completed", string(eventData))
+}
+
+func (ms *MonitorService) pruneTargetRuns(targetID int) error {
+	if ms.db == nil {
+		return nil
+	}
+	deleted, err := ms.db.PruneRunsForTarget(targetID, runRetentionPerTarget)
+	if err != nil {
+		return err
+	}
+	if deleted > 0 {
+		log.Printf("[monitor] pruned old runs target_id=%d removed=%d keep=%d", targetID, deleted, runRetentionPerTarget)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

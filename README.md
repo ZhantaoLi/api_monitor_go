@@ -17,8 +17,8 @@
 
 ## 预览
 
-![Preview](preview.png)
-![Preview Dark](preview-dark.png)
+![Preview](docs/preview.png)
+![Preview Dark](docs/preview-dark.png)
 
 ## 当前能力
 
@@ -83,23 +83,15 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o api-monitor .
 
 ### Docker 运行
 
-仓库内的 `docker-compose.yml` 当前使用固定镜像版本：
+镜像：`lming001/api-monitor-go:latest`
 
-- `lming001/api-monitor-go:v1.3.7`
-
-启动：
+手动启动：
 
 ```bash
 git clone https://github.com/ZhantaoLi/api_monitor_go.git
 cd api_monitor_go
 docker compose pull
 docker compose up -d
-```
-
-查看日志：
-
-```bash
-docker compose logs -f
 ```
 
 默认访问地址：
@@ -112,8 +104,6 @@ docker compose logs -f
 
 ```text
 api_monitor_go/
-├── cmd/
-│   └── api-monitor/            # 预留命令目录
 ├── data/
 │   ├── logs/                   # JSONL 检测日志
 │   └── registry.db             # SQLite 主数据库
@@ -143,8 +133,9 @@ api_monitor_go/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── main.go                     # 入口：embed web 并调用 bootstrap.Start
-├── preview.png
-├── preview-dark.png
+├── docs/
+│   ├── preview.png
+│   └── preview-dark.png
 └── README.md
 ```
 

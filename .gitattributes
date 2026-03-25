@@ -1,2 +1,0 @@
-# Exclude HTML templates from GitHub language statistics
-web/templates/**/*.html linguist-detectable=false

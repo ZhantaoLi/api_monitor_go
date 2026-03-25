@@ -27,6 +27,7 @@ func (s stubMonitor) FetchModels(target *storesqlite.Target) ([]string, error) {
 type stubStore struct {
 	targets      []storesqlite.Target
 	reorderCalls [][]int
+	lastLogsLimit int
 }
 
 func (s *stubStore) ListTargets() ([]storesqlite.Target, error) {
@@ -76,6 +77,7 @@ func (s *stubStore) ListRuns(targetID, limit int) ([]storesqlite.Run, error) { r
 func (s *stubStore) GetLatestRun(targetID int) (*storesqlite.Run, error)     { return nil, nil }
 func (s *stubStore) GetRun(targetID, runID int) (*storesqlite.Run, error)    { return nil, nil }
 func (s *stubStore) ListLogs(targetID int, runID *int, limit int) ([]storesqlite.ModelRow, error) {
+	s.lastLogsLimit = limit
 	return nil, nil
 }
 
@@ -165,5 +167,28 @@ func TestValidateTargetPayloadSelectedModels(t *testing.T) {
 	}
 	if err := validateTargetPayload(invalidItem); err == nil {
 		t.Fatalf("empty selected_models item should fail")
+	}
+}
+
+func TestGetLogsUsesSmallerDefaultLimit(t *testing.T) {
+	store := &stubStore{
+		targets: []storesqlite.Target{
+			{ID: 1, Name: "one", BaseURL: "https://example.com", APIKey: "secret"},
+		},
+	}
+	h := NewHandler(store, stubMonitor{}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/targets/1/logs", nil)
+	req = auth.WithAuthRole(req, auth.AuthRoleVisitor)
+	req.SetPathValue("id", "1")
+	rr := httptest.NewRecorder()
+
+	h.GetLogs(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rr.Code, rr.Body.String())
+	}
+	if store.lastLogsLimit != 500 {
+		t.Fatalf("default logs limit=%d, want 500", store.lastLogsLimit)
 	}
 }

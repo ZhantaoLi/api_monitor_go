@@ -91,11 +91,14 @@ func setupRoutes(
 	if err != nil {
 		log.Fatalf("failed to create sub filesystem for web/: %v", err)
 	}
-	staticFileServer := http.FileServer(http.FS(webContent))
+	faviconContent, err := fs.ReadFile(webContent, "favicon.svg")
+	if err != nil {
+		log.Fatalf("failed to read favicon.svg: %v", err)
+	}
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			staticFileServer.ServeHTTP(w, r)
+			http.NotFound(w, r)
 			return
 		}
 		renderer.Handler("index")(w, r)
@@ -108,6 +111,11 @@ func setupRoutes(
 		http.Redirect(w, r, "/admin.html", http.StatusFound)
 	})))
 	mux.HandleFunc("GET /docs/proxy", renderer.Handler("proxy_docs"))
+	mux.HandleFunc("GET /favicon.svg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(faviconContent)
+	})
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(webContent))))
 
 	mux.HandleFunc("GET /api/health", channelHandler.Health)
