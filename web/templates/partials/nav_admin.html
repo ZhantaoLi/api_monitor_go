@@ -1,0 +1,33 @@
+{{define "nav_admin"}}
+  <nav class="sticky top-0 z-40 w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <a href="/" class="flex items-center gap-2 cursor-pointer">
+          <div class="relative w-8 h-8 flex items-center justify-center bg-zinc-900 dark:bg-white rounded-lg">
+            <i class="ph-bold ph-activity text-white dark:text-zinc-900 text-xl"></i>
+          </div>
+          <span class="text-xl font-bold text-zinc-900 dark:text-white">
+            API <span class="font-normal text-zinc-500 dark:text-zinc-400 ml-1">Monitor</span>
+          </span>
+        </a>
+        <a href="https://github.com/ZhantaoLi/api_monitor_go" target="_blank" rel="noopener noreferrer"
+          class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
+          <i class="ph-bold ph-github-logo text-lg"></i>
+        </a>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="theme-toggle-btn"
+          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+          <i class="ph-bold ph-sun dark:hidden"></i>
+          <i class="ph-bold ph-moon hidden dark:block"></i>
+        </button>
+        <button id="logout-btn"
+          class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold transition-colors flex items-center gap-1.5">
+          <i class="ph-bold ph-sign-out"></i>
+          Logout
+        </button>
+      </div>
+    </div>
+  </nav>
+{{end}}
+

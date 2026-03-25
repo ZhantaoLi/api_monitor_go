@@ -1,9 +1,8 @@
-package app
+package platform
 
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,12 +15,12 @@ const cgroupUnlimitedThreshold = uint64(1 << 60)
 
 var cgroupFSRoot = "/sys/fs/cgroup"
 
-type adminResourcesResponse struct {
+type AdminResourcesResponse struct {
 	SampleTimeMs int64                   `json:"sample_time_ms"`
-	Container    adminContainerResources `json:"container"`
+	Container    AdminContainerResources `json:"container"`
 }
 
-type adminContainerResources struct {
+type AdminContainerResources struct {
 	Available            bool     `json:"available"`
 	CgroupVersion        int      `json:"cgroup_version"`
 	CPUUsageSecondsTotal float64  `json:"cpu_usage_seconds_total"`
@@ -31,15 +30,10 @@ type adminContainerResources struct {
 	Detail               string   `json:"detail,omitempty"`
 }
 
-// AdminGetResources handles GET /api/admin/resources
-func (h *Handlers) AdminGetResources(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, collectAdminResourcesSnapshot(time.Now()))
-}
-
-func collectAdminResourcesSnapshot(now time.Time) adminResourcesResponse {
-	resp := adminResourcesResponse{
+func CollectAdminResourcesSnapshot(now time.Time) AdminResourcesResponse {
+	resp := AdminResourcesResponse{
 		SampleTimeMs: now.UnixMilli(),
-		Container: adminContainerResources{
+		Container: AdminContainerResources{
 			Available:     false,
 			CgroupVersion: 0,
 		},
@@ -80,35 +74,35 @@ func buildCgroupUnavailableDetail(errV2, errV1 error) string {
 	}
 }
 
-func readCgroupV2Snapshot(root string) (adminContainerResources, error) {
+func readCgroupV2Snapshot(root string) (AdminContainerResources, error) {
 	cpuStatRaw, err := readTrimmedFile(filepath.Join(root, "cpu.stat"))
 	if err != nil {
-		return adminContainerResources{}, err
+		return AdminContainerResources{}, err
 	}
 	usageUsec, ok := parseCPUStatUsageUsec(cpuStatRaw)
 	if !ok {
-		return adminContainerResources{}, fmt.Errorf("usage_usec not found in cpu.stat")
+		return AdminContainerResources{}, fmt.Errorf("usage_usec not found in cpu.stat")
 	}
 
 	memUsageRaw, err := readTrimmedFile(filepath.Join(root, "memory.current"))
 	if err != nil {
-		return adminContainerResources{}, err
+		return AdminContainerResources{}, err
 	}
 	memUsage, err := strconv.ParseUint(memUsageRaw, 10, 64)
 	if err != nil {
-		return adminContainerResources{}, fmt.Errorf("invalid memory.current: %w", err)
+		return AdminContainerResources{}, fmt.Errorf("invalid memory.current: %w", err)
 	}
 
 	var cpuLimit *float64
 	cpuMaxRaw, err := readTrimmedFile(filepath.Join(root, "cpu.max"))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return adminContainerResources{}, err
+			return AdminContainerResources{}, err
 		}
 	} else {
 		cpuLimit, err = parseCPUMax(cpuMaxRaw)
 		if err != nil {
-			return adminContainerResources{}, err
+			return AdminContainerResources{}, err
 		}
 	}
 
@@ -116,16 +110,16 @@ func readCgroupV2Snapshot(root string) (adminContainerResources, error) {
 	memMaxRaw, err := readTrimmedFile(filepath.Join(root, "memory.max"))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return adminContainerResources{}, err
+			return AdminContainerResources{}, err
 		}
 	} else {
 		memLimit, err = parseMemoryLimit(memMaxRaw)
 		if err != nil {
-			return adminContainerResources{}, err
+			return AdminContainerResources{}, err
 		}
 	}
 
-	return adminContainerResources{
+	return AdminContainerResources{
 		Available:            true,
 		CgroupVersion:        2,
 		CPUUsageSecondsTotal: float64(usageUsec) / 1_000_000.0,
@@ -135,18 +129,18 @@ func readCgroupV2Snapshot(root string) (adminContainerResources, error) {
 	}, nil
 }
 
-func readCgroupV1Snapshot(root string) (adminContainerResources, error) {
+func readCgroupV1Snapshot(root string) (AdminContainerResources, error) {
 	cpuUsageRaw, err := readFirstTrimmedFile([]string{
 		filepath.Join(root, "cpuacct", "cpuacct.usage"),
 		filepath.Join(root, "cpu,cpuacct", "cpuacct.usage"),
 		filepath.Join(root, "cpuacct.usage"),
 	})
 	if err != nil {
-		return adminContainerResources{}, err
+		return AdminContainerResources{}, err
 	}
 	cpuUsageNS, err := strconv.ParseUint(cpuUsageRaw, 10, 64)
 	if err != nil {
-		return adminContainerResources{}, fmt.Errorf("invalid cpuacct.usage: %w", err)
+		return AdminContainerResources{}, fmt.Errorf("invalid cpuacct.usage: %w", err)
 	}
 
 	memUsageRaw, err := readFirstTrimmedFile([]string{
@@ -154,11 +148,11 @@ func readCgroupV1Snapshot(root string) (adminContainerResources, error) {
 		filepath.Join(root, "memory.usage_in_bytes"),
 	})
 	if err != nil {
-		return adminContainerResources{}, err
+		return AdminContainerResources{}, err
 	}
 	memUsage, err := strconv.ParseUint(memUsageRaw, 10, 64)
 	if err != nil {
-		return adminContainerResources{}, fmt.Errorf("invalid memory.usage_in_bytes: %w", err)
+		return AdminContainerResources{}, fmt.Errorf("invalid memory.usage_in_bytes: %w", err)
 	}
 
 	var cpuLimit *float64
@@ -175,7 +169,7 @@ func readCgroupV1Snapshot(root string) (adminContainerResources, error) {
 	if quotaErr == nil && periodErr == nil {
 		cpuLimit, err = parseCPUQuotaV1(quotaRaw, periodRaw)
 		if err != nil {
-			return adminContainerResources{}, err
+			return AdminContainerResources{}, err
 		}
 	}
 
@@ -187,11 +181,11 @@ func readCgroupV1Snapshot(root string) (adminContainerResources, error) {
 	if err == nil {
 		memLimit, err = parseMemoryLimit(memLimitRaw)
 		if err != nil {
-			return adminContainerResources{}, err
+			return AdminContainerResources{}, err
 		}
 	}
 
-	return adminContainerResources{
+	return AdminContainerResources{
 		Available:            true,
 		CgroupVersion:        1,
 		CPUUsageSecondsTotal: float64(cpuUsageNS) / 1_000_000_000.0,

@@ -1,0 +1,130 @@
+{{define "topbar"}}
+  {{if eq .PageName "index"}}
+    <nav class="sticky top-0 z-50 w-full glass border-b border-zinc-300 dark:border-zinc-700 shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 cursor-pointer" onclick="window.location.reload()">
+            <div class="relative w-8 h-8 flex items-center justify-center bg-zinc-900 dark:bg-white rounded-lg">
+              <i class="ph-bold ph-activity text-white dark:text-zinc-900 text-xl"></i>
+            </div>
+            <span class="text-xl font-bold text-zinc-900 dark:text-white">
+              API <span class="font-normal text-zinc-500 dark:text-zinc-400 ml-1">Monitor</span>
+            </span>
+          </div>
+          <a href="https://github.com/ZhantaoLi/api_monitor_go" target="_blank" rel="noopener noreferrer"
+            class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
+            <i class="ph-bold ph-github-logo text-lg"></i>
+          </a>
+        </div>
+        <div class="hidden md:flex items-center gap-8">
+          <div class="flex flex-col items-center">
+            <span class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Channel</span>
+            <span class="font-mono font-bold text-lg" x-text="stats.targets">0</span>
+          </div>
+          <div class="w-px h-8 bg-zinc-200 dark:bg-zinc-800"></div>
+          <div class="flex flex-col items-center">
+            <span class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Models</span>
+            <span class="font-mono font-bold text-lg" x-text="stats.models">0</span>
+          </div>
+          <div class="w-px h-8 bg-zinc-200 dark:bg-zinc-800"></div>
+          <div class="flex flex-col items-center">
+            <span class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Healthy</span>
+            <span class="font-mono font-bold text-lg text-green-500" x-text="stats.healthy">0</span>
+          </div>
+          <div class="w-px h-8 bg-zinc-200 dark:bg-zinc-800"></div>
+          <div class="flex flex-col items-center">
+            <span class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Health Rate</span>
+            <span class="font-mono font-bold text-lg text-green-500" x-text="stats.rate + '%'">0%</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <button @click="refreshData()"
+            class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-indigo-500 transition-colors">
+            <i class="ph-bold ph-arrows-clockwise" :class="loading ? 'animate-spin text-indigo-500' : ''"></i>
+          </button>
+          <button @click="Utils.toggleTheme()"
+            class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <i class="ph-bold ph-sun dark:hidden"></i>
+            <i class="ph-bold ph-moon hidden dark:block"></i>
+          </button>
+          <a href="/docs/proxy"
+            class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <i class="ph-bold ph-book-open-text"></i>
+          </a>
+          <a href="/admin"
+            class="flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 px-3 py-2 rounded-lg font-medium text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700">
+            <i class="ph-bold ph-gear-six"></i>
+          </a>
+          <button @click="openCreateModal()"
+            class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
+            <i class="ph-bold ph-plus"></i>
+            <span>Add Channel</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+  {{else if eq .PageName "analysis"}}
+    <nav class="fixed top-0 w-full z-50 glass border-b border-zinc-300 dark:border-zinc-700 shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <div class="flex items-center gap-2 cursor-pointer" onclick="goBackToLogs()">
+            <i class="ph-bold ph-arrow-left text-xl text-neon-purple"></i>
+            <span class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-neon-purple to-neon-blue">
+              Back to <span class="font-normal text-zinc-600 dark:text-zinc-400">Logs</span>
+            </span>
+          </div>
+          <div class="flex items-center gap-4">
+            <button onclick="refreshData()"
+              class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2">
+              <i class="ph-bold ph-arrows-clockwise"></i>
+              Refresh
+            </button>
+            <button id="themeToggle"
+              class="p-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all border border-zinc-300 dark:border-zinc-700">
+              <i class="ph-bold ph-moon"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+  {{else if eq .PageName "log_viewer"}}
+    <header
+      class="h-14 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-4 shrink-0 z-20">
+      <div class="flex items-center gap-4">
+        <a href="/"
+          class="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
+          <i class="ph-bold ph-arrow-left"></i>
+          <span class="font-bold">Back</span>
+        </a>
+        <div class="h-6 w-px bg-zinc-200 dark:bg-zinc-800"></div>
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-lg" x-text="target.name || 'Loading...'"></span>
+          <span class="text-xs px-2 py-0.5 rounded-full font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500"
+            x-text="target.base_url"></span>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <a :href="`/analysis.html?target_id=${targetId}`"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
+          <i class="ph-bold ph-chart-line-up"></i>
+          <span>Visual Analysis</span>
+        </a>
+        <div class="relative w-64">
+          <i class="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm"></i>
+          <input type="text" x-model="search" placeholder="Search logs..."
+            class="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 transition-colors">
+        </div>
+        <div class="relative">
+          <select x-model="filterStatus"
+            class="appearance-none bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 transition-colors cursor-pointer">
+            <option value="all">All Status</option>
+            <option value="success">Success</option>
+            <option value="fail">Failed</option>
+          </select>
+          <i class="ph-bold ph-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs pointer-events-none"></i>
+        </div>
+      </div>
+    </header>
+  {{end}}
+{{end}}
+

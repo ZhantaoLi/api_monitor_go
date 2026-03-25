@@ -1,10 +1,7 @@
-package app
+package platform
 
 import (
-	"encoding/json"
 	"math"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -86,68 +83,12 @@ func TestParseMemoryLimit(t *testing.T) {
 	}
 }
 
-func TestAdminGetResources_Unauthorized(t *testing.T) {
-	admin := NewAdminSessionManager("admin-pass", 24*time.Hour)
-	h := &Handlers{admin: admin}
-	handler := adminAPIMiddleware(admin, http.HandlerFunc(h.AdminGetResources))
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/resources", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("unexpected status: got=%d want=%d", rr.Code, http.StatusUnauthorized)
+func TestCollectAdminResourcesSnapshotShape(t *testing.T) {
+	resp := CollectAdminResourcesSnapshot(time.Now())
+	if resp.SampleTimeMs == 0 {
+		t.Fatalf("sample time should be populated")
 	}
-}
-
-func TestAdminGetResources_AuthorizedResponseShape(t *testing.T) {
-	admin := NewAdminSessionManager("admin-pass", 24*time.Hour)
-	token, ok := admin.Login("admin-pass")
-	if !ok || token == "" {
-		t.Fatalf("failed to login admin session")
-	}
-
-	h := &Handlers{admin: admin}
-	handler := adminAPIMiddleware(admin, http.HandlerFunc(h.AdminGetResources))
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/resources", nil)
-	req.AddCookie(&http.Cookie{
-		Name:  adminSessionCookieName,
-		Value: token,
-		Path:  "/",
-	})
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("unexpected status: got=%d want=%d", rr.Code, http.StatusOK)
-	}
-
-	var payload map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("response should be valid json: %v", err)
-	}
-
-	if _, ok := payload["sample_time_ms"]; !ok {
-		t.Fatalf("missing sample_time_ms")
-	}
-
-	containerRaw, ok := payload["container"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing container object")
-	}
-
-	required := []string{
-		"available",
-		"cgroup_version",
-		"cpu_usage_seconds_total",
-		"cpu_limit_cores",
-		"memory_usage_bytes",
-		"memory_limit_bytes",
-	}
-	for _, key := range required {
-		if _, ok := containerRaw[key]; !ok {
-			t.Fatalf("missing container field: %s", key)
-		}
+	if resp.Container == (AdminContainerResources{}) {
+		t.Fatalf("container resources should be initialized")
 	}
 }

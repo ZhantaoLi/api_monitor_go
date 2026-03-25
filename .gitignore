@@ -21,6 +21,12 @@ data/
 .vscode/
 .idea/
 
+# Agent tooling
+.claude/
+CLAUDE.md
+AGENTS.md
+docs/superpowers/
+
 # OS
 .DS_Store
 Thumbs.db

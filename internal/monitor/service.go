@@ -1,6 +1,7 @@
-package app
+package monitor
 
 import (
+	"api_monitor/internal/store/sqlite"
 	"bufio"
 	"bytes"
 	"context"
@@ -408,25 +409,8 @@ func extractTextFromResponses(body any) string {
 // DetectionResult
 // ---------------------------------------------------------------------------
 
-// DetectionResult holds the typed outcome of a single model detection.
-type DetectionResult struct {
-	Protocol         string  `json:"protocol"`
-	Model            string  `json:"model"`
-	Stream           bool    `json:"stream"`
-	Duration         float64 `json:"duration"`
-	TTFB             float64 `json:"ttfb"`
-	Ping             float64 `json:"ping"`
-	Success          bool    `json:"success"`
-	TransportSuccess bool    `json:"transport_success"`
-	ToolCallsCount   int     `json:"tool_calls_count"`
-	ToolCalls        string  `json:"tool_calls"`
-	Content          string  `json:"content"`
-	Timestamp        float64 `json:"timestamp"`
-	Error            *string `json:"error"`
-	StatusCode       *int    `json:"status_code"`
-	Route            string  `json:"route"`
-	Endpoint         string  `json:"endpoint"`
-}
+// DetectionResult aliases the storage-layer row shape used for persisted checks.
+type DetectionResult = sqlite.DetectionResult
 
 // ---------------------------------------------------------------------------
 // MonitorService
@@ -437,7 +421,7 @@ type EventCallback func(eventType, data string)
 
 // MonitorService manages detection scheduling and execution.
 type MonitorService struct {
-	db                 *Database
+	db                 *sqlite.Database
 	logDir             string
 	detectConcurrency  int
 	maxParallelTargets int
@@ -456,7 +440,7 @@ type MonitorService struct {
 
 // MonitorConfig holds configuration for a new MonitorService.
 type MonitorConfig struct {
-	DB                 *Database
+	DB                 *sqlite.Database
 	LogDir             string
 	DetectConcurrency  int
 	MaxParallelTargets int
@@ -630,7 +614,7 @@ func (ms *MonitorService) TriggerTarget(targetID int, force bool) (bool, string)
 	return true, "target started"
 }
 
-func (ms *MonitorService) runTargetSafe(target *Target) {
+func (ms *MonitorService) runTargetSafe(target *sqlite.Target) {
 	defer ms.wg.Done()
 	defer func() {
 		ms.mu.Lock()
@@ -640,7 +624,7 @@ func (ms *MonitorService) runTargetSafe(target *Target) {
 	ms.runTarget(target)
 }
 
-func (ms *MonitorService) runTarget(target *Target) {
+func (ms *MonitorService) runTarget(target *sqlite.Target) {
 	startedAt := float64(time.Now().UnixMilli()) / 1000.0
 	ts := time.Now().Format("20060102_150405_000")
 	logFile, _ := filepath.Abs(filepath.Join(ms.logDir, fmt.Sprintf("target_%d_%s.jsonl", target.ID, ts)))
@@ -814,7 +798,7 @@ func (ms *MonitorService) runTarget(target *Target) {
 // Model discovery + detection
 // ---------------------------------------------------------------------------
 
-func (ms *MonitorService) getModels(target *Target, client *http.Client) ([]string, error) {
+func (ms *MonitorService) getModels(target *sqlite.Target, client *http.Client) ([]string, error) {
 	baseURL := normalizeBaseURL(target.BaseURL)
 	modelsURL := baseURL + "/v1/models"
 	headers := authHeaders(target.APIKey)
@@ -857,7 +841,7 @@ func (ms *MonitorService) getModels(target *Target, client *http.Client) ([]stri
 }
 
 // FetchModels fetches available models from the target's GET /v1/models endpoint.
-func (ms *MonitorService) FetchModels(target *Target) ([]string, error) {
+func (ms *MonitorService) FetchModels(target *sqlite.Target) ([]string, error) {
 	client := httpClient(target.TimeoutS, target.VerifySSL)
 	return ms.getModels(target, client)
 }
@@ -930,7 +914,7 @@ func routeToProtocol(route string) string {
 	return route
 }
 
-func (ms *MonitorService) detectOne(target *Target, modelID string, client *http.Client, pingS float64) DetectionResult {
+func (ms *MonitorService) detectOne(target *sqlite.Target, modelID string, client *http.Client, pingS float64) DetectionResult {
 	route := ms.chooseRoute(modelID)
 	baseURL := normalizeBaseURL(target.BaseURL)
 	headers := authHeaders(target.APIKey)

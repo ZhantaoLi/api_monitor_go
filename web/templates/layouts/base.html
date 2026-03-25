@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="{{.Lang}}" class="dark">
+
+<head>
+  {{template "head_core" .}}
+  {{block "extra_head" .}}{{end}}
+</head>
+
+{{.BodyTag}}
+  {{block "page_header" .}}{{end}}
+  {{block "content" .}}{{end}}
+  {{if .ShowFooter}}{{template "footer" .}}{{end}}
+</body>
+
+</html>
