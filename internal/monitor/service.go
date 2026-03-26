@@ -36,7 +36,7 @@ var routeRules = []struct {
 	{regexp.MustCompile(`claude`), "anthropic"},
 	{regexp.MustCompile(`gemini`), "gemini"},
 	{regexp.MustCompile(`codex`), "responses"},
-	{regexp.MustCompile(`gpt-5\.[123]`), "responses"},
+	{regexp.MustCompile(`gpt-5\.[1234]`), "responses"},
 }
 
 const detectionResponseBodyMaxBytes = 5 << 20

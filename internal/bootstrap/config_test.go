@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"path/filepath"
 	"testing"
+
+	"api_monitor/internal/auth"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -14,6 +16,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("MONITOR_DETECT_CONCURRENCY", "")
 	t.Setenv("MONITOR_MAX_PARALLEL_TARGETS", "")
 	t.Setenv("PROXY_MASTER_TOKEN", "")
+	t.Setenv("TRUST_PROXY_HEADERS", "")
 
 	cfg := loadConfig()
 
@@ -43,6 +46,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if cfg.LogMaxSizeMB != 500 {
 		t.Fatalf("LogMaxSizeMB = %d, want 500", cfg.LogMaxSizeMB)
+	}
+	if auth.IsTrustProxyHeadersEnabled() {
+		t.Fatalf("trust proxy headers should default to false")
 	}
 }
 

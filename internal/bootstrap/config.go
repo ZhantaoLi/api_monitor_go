@@ -45,7 +45,7 @@ func loadConfig() appConfig {
 	if defaultIntervalMin < 1 || defaultIntervalMin > 1440 {
 		defaultIntervalMin = 30
 	}
-	auth.SetTrustProxyHeaders(envBool("TRUST_PROXY_HEADERS", true))
+	auth.SetTrustProxyHeaders(envBool("TRUST_PROXY_HEADERS", false))
 
 	return appConfig{
 		DataDir:                   dataDir,

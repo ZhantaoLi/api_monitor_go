@@ -199,6 +199,10 @@ func SetTrustProxyHeaders(trust bool) {
 	trustProxyHeaders.Store(trust)
 }
 
+func IsTrustProxyHeadersEnabled() bool {
+	return trustProxyHeaders.Load()
+}
+
 func ClientIPFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""

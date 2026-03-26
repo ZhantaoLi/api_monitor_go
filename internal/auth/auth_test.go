@@ -64,6 +64,9 @@ func TestAuthFailureProtector_Clear(t *testing.T) {
 }
 
 func TestClientIPFromRequestPriority(t *testing.T) {
+	SetTrustProxyHeaders(true)
+	t.Cleanup(func() { SetTrustProxyHeaders(true) })
+
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	req.RemoteAddr = "10.0.0.9:4567"
 	req.Header.Set("X-Real-IP", "10.0.0.8")
@@ -78,6 +81,41 @@ func TestClientIPFromRequestPriority(t *testing.T) {
 	req2.Header.Set("X-Forwarded-For", "10.0.0.7, 10.0.0.6")
 	if got := ClientIPFromRequest(req2); got != "10.0.0.7" {
 		t.Fatalf("expected first X-Forwarded-For IP, got=%s", got)
+	}
+}
+
+func TestClientIPFromRequest_IgnoresProxyHeadersWhenDisabled(t *testing.T) {
+	SetTrustProxyHeaders(false)
+	t.Cleanup(func() { SetTrustProxyHeaders(true) })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.RemoteAddr = "10.0.0.9:4567"
+	req.Header.Set("CF-Connecting-IP", "10.0.0.5")
+	req.Header.Set("X-Forwarded-For", "10.0.0.7, 10.0.0.6")
+	req.Header.Set("X-Real-IP", "10.0.0.8")
+
+	if got := ClientIPFromRequest(req); got != "10.0.0.9" {
+		t.Fatalf("expected RemoteAddr IP when proxy headers disabled, got=%s", got)
+	}
+}
+
+func TestSetAdminSessionCookie_DoesNotTrustForwardedHTTPSWhenDisabled(t *testing.T) {
+	SetTrustProxyHeaders(false)
+	t.Cleanup(func() { SetTrustProxyHeaders(true) })
+
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/api/admin/login", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+
+	SetAdminSessionCookie(rr, req, "session-token", time.Hour)
+
+	res := rr.Result()
+	cookies := res.Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected 1 cookie, got=%d", len(cookies))
+	}
+	if cookies[0].Secure {
+		t.Fatalf("expected forwarded https header to be ignored when proxy headers disabled")
 	}
 }
 

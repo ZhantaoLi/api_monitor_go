@@ -337,7 +337,7 @@
                 idx += 1;
             }
             if (idx === 0) return `${Math.round(v)} ${units[idx]}`;
-            return `${v.toFixed(2)} ${units[idx]}`;
+            return `${v.toFixed(1)} ${units[idx]}`;
         },
 
         formatPercent(value) {
@@ -349,7 +349,7 @@
         formatCores(value) {
             const n = Number(value);
             if (!Number.isFinite(n) || n <= 0) return '--';
-            return `${n.toFixed(2)} cores`;
+            return `${n.toFixed(1)} cores`;
         },
 
         setResourceText(id, text) {
@@ -983,5 +983,3 @@
         }
     });
 })();
-
-

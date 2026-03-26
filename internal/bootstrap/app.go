@@ -91,6 +91,10 @@ func setupRoutes(
 	if err != nil {
 		log.Fatalf("failed to create sub filesystem for web/: %v", err)
 	}
+	staticContent, err := fs.Sub(webContent, "assets")
+	if err != nil {
+		log.Fatalf("failed to create sub filesystem for web/assets: %v", err)
+	}
 	faviconContent, err := fs.ReadFile(webContent, "favicon.svg")
 	if err != nil {
 		log.Fatalf("failed to read favicon.svg: %v", err)
@@ -116,7 +120,7 @@ func setupRoutes(
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(faviconContent)
 	})
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(webContent))))
+	mux.Handle("GET /static/assets/", http.StripPrefix("/static/assets/", http.FileServer(http.FS(staticContent))))
 
 	mux.HandleFunc("GET /api/health", channelHandler.Health)
 	mux.HandleFunc("POST /api/admin/login", adminHandler.AdminLogin)

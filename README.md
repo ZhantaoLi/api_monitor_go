@@ -341,7 +341,8 @@ curl http://localhost:8081/v1/chat/completions \
 - `MONITOR_MAX_PARALLEL_TARGETS`
   - 同时运行的渠道数上限，默认 `2`
 - `TRUST_PROXY_HEADERS`
-  - 是否信任反向代理头，默认 `true`
+  - 是否信任反向代理头，默认 `false`
+  - 仅当服务明确运行在受控反向代理后面时再开启
 
 ## 数据与日志
 

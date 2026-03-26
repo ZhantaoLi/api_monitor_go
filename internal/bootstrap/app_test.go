@@ -56,6 +56,17 @@ func TestSetupRoutesDoesNotExposeTemplateFiles(t *testing.T) {
 		}
 	})
 
+	t.Run("static route does not expose templates", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/static/templates/pages/index.html", nil)
+		rr := httptest.NewRecorder()
+
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("status=%d, want %d", rr.Code, http.StatusNotFound)
+		}
+	})
+
 	t.Run("favicon remains reachable", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/favicon.svg", nil)
 		rr := httptest.NewRecorder()
