@@ -189,11 +189,13 @@ func WriteBlockedAuthResponse(w http.ResponseWriter, retryAfter time.Duration) {
 	})
 }
 
-var trustProxyHeaders = func() atomic.Bool {
+func newTrustProxyHeadersFlag() atomic.Bool {
 	var b atomic.Bool
-	b.Store(true)
+	b.Store(false)
 	return b
-}()
+}
+
+var trustProxyHeaders = newTrustProxyHeadersFlag()
 
 func SetTrustProxyHeaders(trust bool) {
 	trustProxyHeaders.Store(trust)

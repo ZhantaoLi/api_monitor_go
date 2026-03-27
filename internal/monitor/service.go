@@ -29,6 +29,8 @@ import (
 // Route rules
 // ---------------------------------------------------------------------------
 
+var gpt5FamilyPattern = regexp.MustCompile(`gpt-5(?:$|[-.])`)
+
 var routeRules = []struct {
 	pattern *regexp.Regexp
 	route   string
@@ -36,7 +38,7 @@ var routeRules = []struct {
 	{regexp.MustCompile(`claude`), "anthropic"},
 	{regexp.MustCompile(`gemini`), "gemini"},
 	{regexp.MustCompile(`codex`), "responses"},
-	{regexp.MustCompile(`gpt-5\.[1234]`), "responses"},
+	{gpt5FamilyPattern, "responses"},
 }
 
 const detectionResponseBodyMaxBytes = 5 << 20
@@ -929,6 +931,22 @@ func (ms *MonitorService) chooseRoute(modelID string) string {
 	return "chat"
 }
 
+func isGPT5Family(modelID string) bool {
+	parts := strings.SplitN(modelID, "/", 2)
+	actual := strings.ToLower(strings.TrimSpace(parts[len(parts)-1]))
+	return gpt5FamilyPattern.MatchString(actual)
+}
+
+func shouldRetryResponsesForChatFailure(modelID string, statusCode int, errText string) bool {
+	if isGPT5Family(modelID) {
+		return true
+	}
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	return strings.Contains(strings.ToLower(errText), "/v1/responses")
+}
+
 func routeToProtocol(route string) string {
 	if route == "chat" || route == "responses" {
 		return "openai"
@@ -1025,26 +1043,23 @@ func (ms *MonitorService) detectOne(target *sqlite.Target, modelID string, clien
 		if result.Success {
 			return result
 		}
-		// Fallback: if chat endpoint returns HTTP 400 suggesting /v1/responses, retry
-		if res.StatusCode == 400 {
-			errText := checkResponseBodyForError(res.JSONBody)
-			if errText == "" {
-				errText = res.Text
+		errText := checkResponseBodyForError(res.JSONBody)
+		if errText == "" {
+			errText = res.Text
+		}
+		if shouldRetryResponsesForChatFailure(modelID, res.StatusCode, errText) {
+			route = "responses"
+			respURL := baseURL + "/v1/responses"
+			respBody := map[string]any{
+				"model":  modelID,
+				"stream": false,
+				"input":  []map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": prompt}}}},
 			}
-			if strings.Contains(strings.ToLower(errText), "/v1/responses") {
-				route = "responses"
-				respURL := baseURL + "/v1/responses"
-				respBody := map[string]any{
-					"model":  modelID,
-					"stream": false,
-					"input":  []map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": prompt}}}},
-				}
-				res2, err2 := httpJSON(client, "POST", respURL, headers, respBody)
-				if err2 != nil {
-					return buildFail("responses", err2.Error(), 0, 0, nil, false)
-				}
-				return validate("responses", res2, extractTextFromResponses)
+			res2, err2 := httpJSON(client, "POST", respURL, headers, respBody)
+			if err2 != nil {
+				return buildFail("responses", err2.Error(), 0, 0, nil, false)
 			}
+			return validate("responses", res2, extractTextFromResponses)
 		}
 		return result
 

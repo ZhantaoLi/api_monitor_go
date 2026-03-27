@@ -63,6 +63,13 @@ func TestAuthFailureProtector_Clear(t *testing.T) {
 	}
 }
 
+func TestNewTrustProxyHeadersFlag_DefaultsToDisabled(t *testing.T) {
+	flag := newTrustProxyHeadersFlag()
+	if flag.Load() {
+		t.Fatalf("expected trust proxy headers flag to default to false")
+	}
+}
+
 func TestClientIPFromRequestPriority(t *testing.T) {
 	SetTrustProxyHeaders(true)
 	t.Cleanup(func() { SetTrustProxyHeaders(true) })

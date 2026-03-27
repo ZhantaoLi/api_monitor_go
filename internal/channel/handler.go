@@ -116,6 +116,28 @@ func stringFromAny(v any, def string) string {
 	}
 }
 
+func sanitizeCreateTargetPayload(payload map[string]any, role auth.AuthRole) map[string]any {
+	if role == auth.AuthRoleAdmin {
+		return payload
+	}
+
+	allowed := map[string]struct{}{
+		"name":         {},
+		"base_url":     {},
+		"api_key":      {},
+		"source_url":   {},
+		"interval_min": {},
+		"timeout_s":    {},
+	}
+	sanitized := make(map[string]any, len(allowed))
+	for key, value := range payload {
+		if _, ok := allowed[key]; ok {
+			sanitized[key] = value
+		}
+	}
+	return sanitized
+}
+
 func validateTargetPayload(payload map[string]any) error {
 	if v, ok := payload["name"]; ok {
 		s := strings.TrimSpace(stringFromAny(v, ""))
@@ -537,6 +559,7 @@ func (h *Handler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}
+	payload = sanitizeCreateTargetPayload(payload, auth.AuthRoleFromRequest(r))
 	name, _ := payload["name"].(string)
 	baseURL, _ := payload["base_url"].(string)
 	apiKey, _ := payload["api_key"].(string)
@@ -558,6 +581,10 @@ func (h *Handler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) PatchTarget(w http.ResponseWriter, r *http.Request) {
+	if auth.AuthRoleFromRequest(r) != auth.AuthRoleAdmin {
+		auth.WriteJSON(w, http.StatusForbidden, map[string]any{"detail": "admin token required"})
+		return
+	}
 	id, ok := pathID(r)
 	if !ok {
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid id"})
@@ -570,9 +597,6 @@ func (h *Handler) PatchTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		auth.WriteJSON(w, http.StatusNotFound, map[string]any{"detail": "target not found"})
-		return
-	}
-	if !requireChannelOperationPermission(w, r, existing) {
 		return
 	}
 	var updates map[string]any
