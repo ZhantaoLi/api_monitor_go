@@ -10,40 +10,40 @@
 {{define "content"}}
   <!-- Header -->
   <header
-    class="h-14 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-4 shrink-0 z-20">
-    <div class="flex items-center gap-4">
+    class="h-auto sm:h-14 py-2 sm:py-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between px-4 shrink-0 z-20 gap-2 sm:gap-0">
+    <div class="flex items-center justify-between w-full sm:w-auto gap-4">
       <a href="/"
         class="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
         <i class="ph-bold ph-arrow-left"></i>
-        <span class="font-bold">Back</span>
+        <span class="font-bold hidden sm:inline">Back</span>
       </a>
-      <div class="h-6 w-px bg-zinc-200 dark:bg-zinc-800"></div>
-      <div class="flex items-center gap-2">
-        <span class="font-bold text-lg" x-text="target.name || 'Loading...'"></span>
-        <span class="text-xs px-2 py-0.5 rounded-full font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500"
+      <div class="h-6 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block"></div>
+      <div class="flex items-center gap-2 truncate">
+        <span class="font-bold text-base sm:text-lg truncate" x-text="target.name || 'Loading...'"></span>
+        <span class="text-xs px-2 py-0.5 rounded-full font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hidden sm:inline"
           x-text="target.base_url"></span>
       </div>
     </div>
 
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap sm:flex-nowrap items-center w-full sm:w-auto gap-2 sm:gap-3">
       <!-- Analysis Button -->
       <a :href="`/analysis.html?target_id=${targetId}`"
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
+        class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95 flex-1 sm:flex-none whitespace-nowrap">
         <i class="ph-bold ph-chart-line-up"></i>
-        <span>Visual Analysis</span>
+        <span class="hidden sm:inline">Analysis</span>
       </a>
 
       <!-- Search -->
-      <div class="relative w-64">
+      <div class="relative flex-1 sm:w-64 min-w-[120px]">
         <i class="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm"></i>
         <input type="text" x-model="search" placeholder="Search logs..."
           class="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 transition-colors">
       </div>
 
       <!-- Status Filter -->
-      <div class="relative">
+      <div class="relative shrink-0">
         <select x-model="filterStatus"
-          class="appearance-none bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 transition-colors cursor-pointer">
+          class="appearance-none bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 transition-colors cursor-pointer text-zinc-800 dark:text-zinc-200 [&>option]:bg-white [&>option]:text-zinc-800 dark:[&>option]:bg-zinc-900 dark:[&>option]:text-zinc-200">
           <option value="all">All Status</option>
           <option value="success">Success</option>
           <option value="fail">Failed</option>
@@ -51,16 +51,14 @@
         <i
           class="ph-bold ph-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs pointer-events-none"></i>
       </div>
-
-
     </div>
   </header>
 
   <!-- Main Content (Split Pane) -->
-  <main class="flex-1 flex overflow-hidden">
+  <main class="flex-1 flex overflow-hidden relative">
     <!-- Left Pane: List -->
     <div
-      class="w-1/3 min-w-[320px] max-w-md border-r border-zinc-200 dark:border-zinc-800 flex flex-col bg-white/80 dark:bg-zinc-900/60 backdrop-blur-md">
+      class="w-full md:w-1/3 md:min-w-[320px] md:max-w-md border-r border-zinc-200 dark:border-zinc-800 flex flex-col bg-white/80 dark:bg-zinc-900/60 backdrop-blur-md">
       <!-- Stats -->
       <div class="p-3 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-2 gap-2 text-xs">
         <div class="bg-zinc-50 dark:bg-zinc-800/50 p-2 rounded-lg text-center">
@@ -117,9 +115,10 @@
     </div>
 
     <!-- Right Pane: Details -->
-    <div class="flex-1 bg-white/60 dark:bg-zinc-900/40 backdrop-blur-sm flex flex-col h-full overflow-hidden relative">
+    <div class="absolute inset-0 z-30 md:relative md:z-auto bg-white/95 dark:bg-zinc-900/95 md:bg-white/60 md:dark:bg-zinc-900/40 backdrop-blur-lg md:backdrop-blur-sm flex-1 flex flex-col h-full overflow-hidden transition-transform duration-300 md:translate-x-0"
+         :class="selectedLog ? 'translate-x-0' : 'translate-x-full'" x-cloak>
       <template x-if="!selectedLog">
-        <div class="absolute inset-0 flex flex-col items-center justify-center text-zinc-400">
+        <div class="hidden md:flex absolute inset-0 flex-col items-center justify-center text-zinc-400">
           <i class="ph-duotone ph-cursor-click text-4xl mb-4 opacity-50"></i>
           <p>Select a log to view details</p>
         </div>
@@ -133,12 +132,15 @@
             <div class="flex items-start justify-between mb-4">
               <div>
                 <h2 class="text-lg font-bold flex items-center gap-2">
+                  <button @click="selectedId = null" class="md:hidden mr-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">
+                    <i class="ph-bold ph-arrow-left"></i>
+                  </button>
                   <span x-text="selectedLog.model"></span>
                 </h2>
                 <div class="flex items-center gap-3 text-sm text-zinc-500 mt-1">
                   <span class="flex items-center gap-1"><i class="ph-bold ph-clock"></i> <span
                       x-text="Utils.fmtFullTime(selectedLog.timestamp)"></span></span>
-                  <span class="flex items-center gap-1"><i class="ph-bold ph-hash"></i> <span
+                  <span class="flex items-center gap-1 hidden sm:flex"><i class="ph-bold ph-hash"></i> <span
                       x-text="'ID: ' + selectedLog.id"></span></span>
                 </div>
               </div>
@@ -173,21 +175,21 @@
               </template>
 
               <!-- Meta Grid -->
-              <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div class="glass-panel p-3 rounded-lg">
-                  <div class="text-xs text-zinc-500 uppercase mb-1">Protocol</div>
-                  <div class="font-mono font-bold" x-text="selectedLog.protocol"></div>
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div class="glass-panel p-2 sm:p-3 rounded-lg">
+                  <div class="text-[10px] sm:text-xs text-zinc-500 uppercase mb-1">Protocol</div>
+                  <div class="font-mono text-sm sm:text-base font-bold" x-text="selectedLog.protocol"></div>
                 </div>
-                <div class="glass-panel p-3 rounded-lg">
-                  <div class="text-xs text-zinc-500 uppercase mb-1">Route</div>
-                  <div class="font-mono text-sm" x-text="selectedLog.route || '-'"></div>
+                <div class="glass-panel p-2 sm:p-3 rounded-lg">
+                  <div class="text-[10px] sm:text-xs text-zinc-500 uppercase mb-1">Route</div>
+                  <div class="font-mono text-xs sm:text-sm" x-text="selectedLog.route || '-'"></div>
                 </div>
-                <div class="glass-panel p-3 rounded-lg">
-                  <div class="text-xs text-zinc-500 uppercase mb-1">Endpoint</div>
-                  <div class="font-mono text-sm truncate" x-text="selectedLog.endpoint || '-'"
+                <div class="glass-panel p-2 sm:p-3 rounded-lg col-span-2 lg:col-span-1">
+                  <div class="text-[10px] sm:text-xs text-zinc-500 uppercase mb-1">Endpoint</div>
+                  <div class="font-mono text-xs sm:text-sm truncate" x-text="selectedLog.endpoint || '-'"
                     :title="selectedLog.endpoint"></div>
                 </div>
-                <div class="glass-panel p-3 rounded-lg">
+                <div class="glass-panel p-2 sm:p-3 rounded-lg hidden lg:block">
                   <div class="text-xs text-zinc-500 uppercase mb-1">Stream</div>
                   <div class="font-mono font-bold" x-text="selectedLog.stream ? 'YES' : 'NO'"></div>
                 </div>

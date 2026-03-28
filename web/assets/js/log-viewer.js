@@ -37,8 +37,8 @@ function logViewer() {
                         tool_calls: typeof l.tool_calls === 'string' ? JSON.parse(l.tool_calls) : l.tool_calls
                     }));
 
-                    // Select first if none selected
-                    if (!this.selectedId && this.logs.length > 0) {
+                    // Select first if none selected (desktop only)
+                    if (!this.selectedId && this.logs.length > 0 && window.innerWidth >= 768) {
                         this.selectedId = this.logs[0].id;
                     }
                 }

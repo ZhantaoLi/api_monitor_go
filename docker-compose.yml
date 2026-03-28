@@ -1,6 +1,6 @@
 services:
   api-monitor-go:
-    image: lming001/api-monitor-go:v1.4.0
+    image: lming001/api-monitor-go:latest
     pull_policy: always
     platform: linux/amd64
     container_name: api-monitor-go

@@ -20,16 +20,16 @@
           <i class="ph-bold ph-github-logo text-lg"></i>
         </a>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1 sm:gap-2">
         <button id="theme-toggle-btn"
-          class="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+          class="p-1.5 sm:p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
           <i class="ph-bold ph-sun dark:hidden"></i>
           <i class="ph-bold ph-moon hidden dark:block"></i>
         </button>
         <button id="logout-btn"
-          class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold transition-colors flex items-center gap-1.5">
+          class="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold transition-colors flex items-center gap-1.5">
           <i class="ph-bold ph-sign-out"></i>
-          Logout
+          <span class="hidden sm:inline">Logout</span>
         </button>
       </div>
     </div>
@@ -275,7 +275,7 @@
     <div
       class="relative w-full max-w-2xl rounded-2xl overflow-hidden glass-modal border border-zinc-200 dark:border-zinc-800 shadow-2xl">
       <div
-        class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/70 dark:bg-zinc-900/70">
+        class="px-4 py-3 sm:px-6 sm:py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/70 dark:bg-zinc-900/70">
         <div>
           <h3 class="font-bold text-lg text-zinc-900 dark:text-zinc-100">Channel Model Selection</h3>
           <p id="channel-models-meta" class="text-xs text-zinc-500 mt-1"></p>
@@ -286,9 +286,9 @@
         </button>
       </div>
 
-      <div class="px-6 pt-4 pb-2 flex flex-col gap-3">
-        <div class="flex items-center gap-2">
-          <div class="relative flex-1">
+      <div class="px-4 sm:px-6 pt-4 pb-2 flex flex-col gap-3">
+        <div class="flex flex-wrap sm:flex-nowrap items-center gap-2">
+          <div class="relative flex-1 min-w-[150px]">
             <i class="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm"></i>
             <input id="channel-models-search" type="text" placeholder="Search models..."
               class="w-full pl-9 pr-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
@@ -302,7 +302,7 @@
         </div>
       </div>
 
-      <div class="px-6 pb-4">
+      <div class="px-4 sm:px-6 pb-4">
         <div id="channel-models-list"
           class="max-h-80 overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 divide-y divide-zinc-200 dark:divide-zinc-800">
         </div>
@@ -313,7 +313,7 @@
           class="hidden mt-3 p-2 text-xs text-rose-500 bg-rose-500/10 border border-rose-500/20 rounded-lg"></div>
       </div>
 
-      <div class="px-6 pb-6 flex gap-3">
+      <div class="px-4 sm:px-6 pb-4 sm:pb-6 flex gap-3">
         <button id="channel-models-cancel-btn" type="button"
           class="flex-1 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 text-sm font-bold transition-colors">Cancel</button>
         <button id="channel-models-save-btn" type="button"
@@ -327,7 +327,7 @@
     <div
       class="relative w-full max-w-2xl rounded-2xl overflow-hidden glass-modal border border-zinc-200 dark:border-zinc-800 shadow-2xl">
       <div
-        class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/70 dark:bg-zinc-900/70">
+        class="px-4 py-3 sm:px-6 sm:py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/70 dark:bg-zinc-900/70">
         <div>
           <h3 class="font-bold text-lg text-zinc-900 dark:text-zinc-100">Edit Channel Advanced Settings</h3>
           <p id="channel-advanced-meta" class="text-xs text-zinc-500 mt-1"></p>
@@ -338,7 +338,7 @@
         </button>
       </div>
 
-      <div class="p-6 space-y-4">
+      <div class="p-4 sm:p-6 space-y-4">
         <div class="space-y-1">
           <label for="channel-advanced-max-models"
             class="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Max Models (0=All)</label>
@@ -372,7 +372,7 @@
           class="hidden p-2 text-xs text-rose-500 bg-rose-500/10 border border-rose-500/20 rounded-lg"></div>
       </div>
 
-      <div class="px-6 pb-6 flex gap-3">
+      <div class="px-4 sm:px-6 pb-4 sm:pb-6 flex gap-3">
         <button id="channel-advanced-cancel-btn" type="button"
           class="flex-1 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 text-sm font-bold transition-colors">Cancel</button>
         <button id="channel-advanced-save-btn" type="button"

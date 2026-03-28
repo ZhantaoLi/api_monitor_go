@@ -36,14 +36,14 @@
         </div>
 
         <!-- Actions -->
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-1.5 sm:gap-4">
           <button onclick="refreshData()"
-            class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2">
+            class="bg-indigo-600 hover:bg-indigo-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2">
             <i class="ph-bold ph-arrows-clockwise"></i>
-            Refresh
+            <span class="hidden sm:inline">Refresh</span>
           </button>
           <button id="themeToggle"
-            class="p-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all border border-zinc-300 dark:border-zinc-700">
+            class="p-1.5 sm:p-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all border border-zinc-300 dark:border-zinc-700">
             <i class="ph-bold ph-moon"></i>
           </button>
         </div>
@@ -129,9 +129,9 @@
       <!-- Analytics: Charts Row 1 (Latency + Status) -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Latency Chart -->
-        <div class="lg:col-span-2 glass p-6 rounded-2xl flex flex-col h-80">
-          <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-bold flex items-center gap-2 text-zinc-900 dark:text-white">
+        <div class="lg:col-span-2 glass p-4 sm:p-6 rounded-2xl flex flex-col h-[28rem] sm:h-80 w-full min-w-0">
+          <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
+            <h3 class="text-base sm:text-lg font-bold flex items-center gap-2 text-zinc-900 dark:text-white">
               <i class="ph-duotone ph-chart-bar analysis-latency-soft"></i>
               Latency by Model (Successful Only)
             </h3>
@@ -208,9 +208,9 @@
       </div>
 
       <!-- Floating Filter Bar (Fixed Bottom Center) -->
-      <div class="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-4xl px-4 pointer-events-none">
+      <div class="fixed bottom-4 sm:bottom-8 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-4xl px-2 sm:px-4 pointer-events-none">
         <div
-          class="liquid-glass p-3 flex flex-wrap items-center justify-between gap-4 pointer-events-auto border border-white/20 dark:border-white/10">
+          class="liquid-glass p-2 sm:p-3 flex flex-wrap items-center justify-between gap-2 sm:gap-4 pointer-events-auto border border-white/20 dark:border-white/10 hide-scrollbar overflow-x-auto">
 
           <!-- Filters Group -->
           <div class="flex items-center gap-2 flex-shrink-0">
