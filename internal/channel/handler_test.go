@@ -3,8 +3,10 @@ package channel
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"api_monitor/internal/auth"
@@ -354,6 +356,37 @@ func TestCreateTargetAllowsAdminAdvancedFields(t *testing.T) {
 		if _, ok := created[key]; !ok {
 			t.Fatalf("admin payload should preserve key %q", key)
 		}
+	}
+}
+
+func TestCreateTargetRejectsTooLargeJSONBody(t *testing.T) {
+	h := NewHandler(&stubStore{}, stubMonitor{}, nil)
+
+	body := `{"name":"n","base_url":"https://example.com","api_key":"` + strings.Repeat("a", 1<<20) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/targets", bytes.NewBufferString(body))
+	req = auth.WithAuthRole(req, auth.AuthRoleAdmin)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	h.CreateTarget(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("unexpected status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "invalid JSON") {
+		t.Fatalf("oversized request should not append invalid JSON body: %s", rr.Body.String())
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(rr.Body.Bytes()))
+	var resp map[string]any
+	if err := dec.Decode(&resp); err != nil {
+		t.Fatalf("expected single json response, decode failed: %v body=%s", err, rr.Body.String())
+	}
+	if got := resp["detail"]; got != "request body too large (max 1 MiB)" {
+		t.Fatalf("unexpected detail: %v", got)
+	}
+	if err := dec.Decode(&resp); err != io.EOF {
+		t.Fatalf("expected single JSON document, got extra body err=%v raw=%s", err, rr.Body.String())
 	}
 }
 

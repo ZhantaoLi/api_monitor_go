@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,11 +50,11 @@ func TestAdminLogin_BlockedIP(t *testing.T) {
 func TestAdminPatchSettings_UpdatesAuthTokensAndBus(t *testing.T) {
 	store := &fakeAdminStore{
 		settings: map[string]string{
-			settingProxyMasterToken:   "proxy-master",
-			settingLogCleanupEnabled:  "true",
-			settingLogMaxSizeMB:       "500",
-			settingLiquidGlassEnabled: "true",
-			settingVisitorModeEnabled: "false",
+			SettingProxyMasterToken:   "proxy-master",
+			SettingLogCleanupEnabled:  "true",
+			SettingLogMaxSizeMB:       "500",
+			SettingLiquidGlassEnabled: "true",
+			SettingVisitorModeEnabled: "false",
 		},
 	}
 	mon := &fakeMonitor{cleanupEnabled: true, cleanupMB: 500}
@@ -87,11 +88,42 @@ func TestAdminPatchSettings_UpdatesAuthTokensAndBus(t *testing.T) {
 	if !auth.IsVisitorModeEnabled() {
 		t.Fatalf("visitor mode should be enabled")
 	}
-	if got := store.settings[settingProxyMasterToken]; got != "proxy-new" {
+	if got := store.settings[SettingProxyMasterToken]; got != "proxy-new" {
 		t.Fatalf("proxy master token not persisted: %q", got)
 	}
 	if !bus.hasEvent("auth_changed") {
 		t.Fatalf("expected auth_changed event, got=%v", bus.events)
+	}
+}
+
+func TestAdminLoginRejectsTooLargeJSONBody(t *testing.T) {
+	h := &AdminHandler{Sessions: auth.NewAdminSessionManager("correct-token", 24*time.Hour)}
+
+	body := `{"password":"` + strings.Repeat("a", 1<<20) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "8.8.8.8:1234"
+	rr := httptest.NewRecorder()
+
+	h.AdminLogin(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("unexpected status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "invalid JSON") {
+		t.Fatalf("oversized request should not append invalid JSON body: %s", rr.Body.String())
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(rr.Body.Bytes()))
+	var resp map[string]any
+	if err := dec.Decode(&resp); err != nil {
+		t.Fatalf("expected single json response, decode failed: %v body=%s", err, rr.Body.String())
+	}
+	if got := resp["detail"]; got != "request body too large (max 1 MiB)" {
+		t.Fatalf("unexpected detail: %v", got)
+	}
+	if err := dec.Decode(&resp); err != io.EOF {
+		t.Fatalf("expected single JSON document, got extra body err=%v raw=%s", err, rr.Body.String())
 	}
 }
 

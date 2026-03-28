@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -189,13 +191,7 @@ func WriteBlockedAuthResponse(w http.ResponseWriter, retryAfter time.Duration) {
 	})
 }
 
-func newTrustProxyHeadersFlag() atomic.Bool {
-	var b atomic.Bool
-	b.Store(false)
-	return b
-}
-
-var trustProxyHeaders = newTrustProxyHeadersFlag()
+var trustProxyHeaders atomic.Bool
 
 func SetTrustProxyHeaders(trust bool) {
 	trustProxyHeaders.Store(trust)
@@ -465,13 +461,31 @@ func ClearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func ReadJSON(r *http.Request, target any) error {
-	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
-	return json.NewDecoder(r.Body).Decode(target)
+// errRequestBodyTooLarge is returned by ReadJSON when the request body exceeds 1 MiB.
+// Callers should treat this as a signal that the 413 response has already been written.
+var errRequestBodyTooLarge = errors.New("request body too large")
+
+func IsRequestBodyTooLarge(err error) bool {
+	return errors.Is(err, errRequestBodyTooLarge)
+}
+
+func ReadJSON(r *http.Request, w http.ResponseWriter, target any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := json.NewDecoder(r.Body).Decode(target); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			WriteJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"detail": "request body too large (max 1 MiB)"})
+			return errRequestBodyTooLarge
+		}
+		return err
+	}
+	return nil
 }
 
 func WriteJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("[auth] writeJSON encode error: %v", err)
+	}
 }

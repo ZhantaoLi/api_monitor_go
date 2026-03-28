@@ -18,3 +18,8 @@ services:
       - API_MONITOR_TOKEN_VISITOR=${API_MONITOR_TOKEN_VISITOR:-}
     volumes:
       - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,17 +24,6 @@ const (
 )
 
 const AdminSessionCookieName = auth.AdminSessionCookieName
-
-const (
-	settingProxyMasterToken       = SettingProxyMasterToken
-	settingDefaultIntervalMin     = SettingDefaultIntervalMin
-	settingLogCleanupEnabled      = SettingLogCleanupEnabled
-	settingLogMaxSizeMB           = SettingLogMaxSizeMB
-	settingVisitorModeEnabled     = SettingVisitorModeEnabled
-	settingLiquidGlassEnabled     = SettingLiquidGlassEnabled
-	settingRuntimeAPIToken        = SettingRuntimeAPIToken
-	settingRuntimeVisitorAPIToken = SettingRuntimeVisitorAPIToken
-)
 
 type Target struct {
 	ID                           int      `json:"id"`
@@ -252,6 +242,12 @@ func validateTargetPayload(payload map[string]any) error {
 			return fmt.Errorf("max_models must be an integer between 0 and 5000")
 		}
 	}
+	if v, ok := payload["sort_order"]; ok {
+		n, ok := anyInt(v)
+		if !ok || n < 1 || n > 1000000 {
+			return fmt.Errorf("sort_order must be an integer between 1 and 1000000")
+		}
+	}
 	if v, ok := payload["prompt"]; ok {
 		s := strings.TrimSpace(stringFromAny(v, ""))
 		if s == "" || len(s) > 4000 {
@@ -262,6 +258,15 @@ func validateTargetPayload(payload map[string]any) error {
 		s := strings.TrimSpace(stringFromAny(v, ""))
 		if len(s) < 4 || len(s) > 64 {
 			return fmt.Errorf("anthropic_version must be 4-64 chars")
+		}
+	}
+	if v, ok := payload["source_url"]; ok && v != nil {
+		s, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("source_url must be a string or null")
+		}
+		if len(strings.TrimSpace(s)) > 1024 {
+			return fmt.Errorf("source_url must be <= 1024 chars")
 		}
 	}
 	if _, ok := payload["visitor_channel_actions_enabled"]; ok {
@@ -319,6 +324,9 @@ func anyInt(v any) (int, bool) {
 	case int64:
 		return int(n), true
 	case float64:
+		if math.Trunc(n) != n {
+			return 0, false
+		}
 		return int(n), true
 	default:
 		return 0, false

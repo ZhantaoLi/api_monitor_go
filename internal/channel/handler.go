@@ -531,7 +531,10 @@ func (h *Handler) PatchTargetModels(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		SelectedModels []string `json:"selected_models"`
 	}
-	if err := auth.ReadJSON(r, &req); err != nil {
+	if err := auth.ReadJSON(r, w, &req); err != nil {
+		if auth.IsRequestBodyTooLarge(err) {
+			return
+		}
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}
@@ -555,7 +558,10 @@ func (h *Handler) PatchTargetModels(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 	var payload map[string]any
-	if err := auth.ReadJSON(r, &payload); err != nil {
+	if err := auth.ReadJSON(r, w, &payload); err != nil {
+		if auth.IsRequestBodyTooLarge(err) {
+			return
+		}
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}
@@ -600,7 +606,10 @@ func (h *Handler) PatchTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var updates map[string]any
-	if err := auth.ReadJSON(r, &updates); err != nil {
+	if err := auth.ReadJSON(r, w, &updates); err != nil {
+		if auth.IsRequestBodyTooLarge(err) {
+			return
+		}
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}
@@ -661,7 +670,10 @@ func (h *Handler) ReorderTargets(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		TargetIDs []int `json:"target_ids"`
 	}
-	if err := auth.ReadJSON(r, &req); err != nil {
+	if err := auth.ReadJSON(r, w, &req); err != nil {
+		if auth.IsRequestBodyTooLarge(err) {
+			return
+		}
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}

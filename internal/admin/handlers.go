@@ -30,7 +30,10 @@ func (h *AdminHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adminLoginRequest
-	if err := auth.ReadJSON(r, &req); err != nil {
+	if err := auth.ReadJSON(r, w, &req); err != nil {
+		if auth.IsRequestBodyTooLarge(err) {
+			return
+		}
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}
@@ -70,7 +73,10 @@ func (h *AdminHandler) AdminPatchSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req adminSettingsPatchRequest
-	if err := auth.ReadJSON(r, &req); err != nil {
+	if err := auth.ReadJSON(r, w, &req); err != nil {
+		if auth.IsRequestBodyTooLarge(err) {
+			return
+		}
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}
@@ -216,7 +222,10 @@ func (h *AdminHandler) AdminPatchChannelAdvanced(w http.ResponseWriter, r *http.
 		return
 	}
 	var req adminChannelAdvancedPatchRequest
-	if err := auth.ReadJSON(r, &req); err != nil {
+	if err := auth.ReadJSON(r, w, &req); err != nil {
+		if auth.IsRequestBodyTooLarge(err) {
+			return
+		}
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}
@@ -335,7 +344,10 @@ func (h *AdminHandler) AdminPatchChannelModels(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var req adminChannelModelsPatchRequest
-	if err := auth.ReadJSON(r, &req); err != nil {
+	if err := auth.ReadJSON(r, w, &req); err != nil {
+		if auth.IsRequestBodyTooLarge(err) {
+			return
+		}
 		auth.WriteJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid JSON"})
 		return
 	}

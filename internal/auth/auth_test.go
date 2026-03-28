@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -63,8 +64,8 @@ func TestAuthFailureProtector_Clear(t *testing.T) {
 	}
 }
 
-func TestNewTrustProxyHeadersFlag_DefaultsToDisabled(t *testing.T) {
-	flag := newTrustProxyHeadersFlag()
+func TestTrustProxyHeadersFlagZeroValueDefaultsToDisabled(t *testing.T) {
+	var flag atomic.Bool
 	if flag.Load() {
 		t.Fatalf("expected trust proxy headers flag to default to false")
 	}
