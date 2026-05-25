@@ -1,5 +1,14 @@
 // Analysis page logic (extracted from analysis.html)
 
+function esc(text) {
+    return String(text ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
 // State
 let logs = [];
 let filteredLogs = [];
@@ -171,7 +180,7 @@ async function fetchLogs(targetId) {
         }
     } catch (err) {
         console.error(err);
-        document.getElementById('loadingState').innerHTML = `<p class="text-red-500">Error: ${err.message}</p>`;
+        document.getElementById('loadingState').innerHTML = `<p class="text-red-500">Error: ${esc(err.message)}</p>`;
         document.getElementById('loadingState').classList.remove('hidden');
     }
 }
@@ -186,7 +195,7 @@ function populateFilters() {
     const select = document.getElementById('filterProtocol');
     select.innerHTML = '<option value="all">All Protocols</option>';
     protocols.forEach(p => {
-        select.innerHTML += `<option value="${p}">${p}</option>`;
+        select.innerHTML += `<option value="${esc(p)}">${esc(p)}</option>`;
     });
     renderProtocolDropdown(select);
 }
@@ -528,7 +537,7 @@ function updateAnalytics() {
         const row = document.createElement('tr');
         row.className = "hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors border-b border-zinc-100 dark:border-zinc-800 last:border-0";
         row.innerHTML = `
-                    <td class="p-3 font-medium text-zinc-900 dark:text-white">${model}</td>
+                    <td class="p-3 font-medium text-zinc-900 dark:text-white">${esc(model)}</td>
                     <td class="p-3 text-zinc-600 dark:text-zinc-400">${s.count}</td>
                     <td class="p-3">
                         <div class="flex items-center gap-2">
@@ -566,7 +575,7 @@ function updateAnalytics() {
             const li = document.createElement('li');
             li.className = "flex justify-between items-start gap-2 p-2 rounded bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20";
             li.innerHTML = `
-                        <span class="text-zinc-700 dark:text-zinc-300 font-mono break-all" title="${err}">${err}</span>
+                        <span class="text-zinc-700 dark:text-zinc-300 font-mono break-all" title="${esc(err)}">${esc(err)}</span>
                         <span class="shrink-0 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">${count}</span>
                     `;
             errorList.appendChild(li);
@@ -608,10 +617,10 @@ function renderTable() {
                     <td class="p-4 font-mono text-xs text-zinc-500 dark:text-zinc-400">${timeStr}</td>
                     <td class="p-4">${statusIcon}</td>
                     <td class="p-4">
-                        <span class="font-bold text-zinc-800 dark:text-zinc-200">${log.protocol}</span>
+                        <span class="font-bold text-zinc-800 dark:text-zinc-200">${esc(log.protocol)}</span>
                     </td>
                     <td class="p-4">
-                        <div class="text-xs text-zinc-600 dark:text-zinc-400 truncate max-w-[150px]" title="${log.model}">${log.model}</div>
+                        <div class="text-xs text-zinc-600 dark:text-zinc-400 truncate max-w-[150px]" title="${esc(log.model)}">${esc(log.model)}</div>
                         </td>
                     <td class="p-4 font-mono analysis-latency-strong">${duration}</td>
                     <td class="p-4 font-mono text-cyan-600 dark:text-cyan-400 text-xs">${ttfb}</td>

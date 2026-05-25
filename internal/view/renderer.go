@@ -87,7 +87,7 @@ func (r *Renderer) Render(w http.ResponseWriter, pageName string) error {
 	input := spec.input
 	if r.settings != nil && r.liquidGlassSettingKey != "" {
 		if val, ok, err := r.settings.GetSetting(r.liquidGlassSettingKey); err == nil && ok {
-			input.LiquidGlassEnabled = parseBoolString(val, true)
+			input.LiquidGlassEnabled = parseBoolString(val, false)
 		}
 	}
 	data := buildPageData(input)

@@ -393,6 +393,14 @@
       // Remove the old CSS 'filter' map which warped the UI!
       this.element.style.setProperty('filter', 'none', 'important');
     }
+
+    destroy() {
+      if (this.observer) {
+        this.observer.disconnect();
+        this.observer = null;
+      }
+      this.svg.remove();
+    }
   }
 
   // --- INIT ---
@@ -424,12 +432,22 @@
       }
     });
     shader.appendTo(document.body);
-    window.liquidGlass = shader;
 
     // 2. Attach tailored optical liquid glass to all native UI components matching .liquid-glass
+    const nativeInstances = [];
     document.querySelectorAll('.liquid-glass').forEach(el => {
-      new NativeLiquidGlass(el);
+      nativeInstances.push(new NativeLiquidGlass(el));
     });
+
+    // Expose global handle with unified destroy
+    window.liquidGlass = {
+      shader,
+      destroy() {
+        shader.destroy();
+        nativeInstances.forEach(inst => inst.destroy());
+        nativeInstances.length = 0;
+      }
+    };
   });
 
 })();

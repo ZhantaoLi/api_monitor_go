@@ -136,7 +136,7 @@ func (h *AdminHandler) loadAdminSettings() (map[string]any, error) {
 		"proxy_master_token":        proxyMasterToken,
 		"log_cleanup_enabled":       parseBoolString(settings[SettingLogCleanupEnabled], cleanupEnabled),
 		"log_max_size_mb":           parseIntString(settings[SettingLogMaxSizeMB], cleanupMaxMB),
-		"liquid_glass_enabled":      parseBoolString(settings[SettingLiquidGlassEnabled], true),
+		"liquid_glass_enabled":      parseBoolString(settings[SettingLiquidGlassEnabled], false),
 	}, nil
 }
 

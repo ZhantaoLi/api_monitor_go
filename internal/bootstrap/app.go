@@ -35,7 +35,7 @@ func initDatabase(cfg appConfig) (*storesqlite.Database, bool, int, string, stri
 		{admin.SettingDefaultIntervalMin, strconv.Itoa(cfg.DefaultIntervalMin)},
 		{admin.SettingProxyMasterToken, cfg.ProxyMasterTokenDefault},
 		{admin.SettingVisitorModeEnabled, "true"},
-		{admin.SettingLiquidGlassEnabled, "true"},
+		{admin.SettingLiquidGlassEnabled, "false"},
 	} {
 		if err := db.EnsureSettingDefault(item.key, item.val); err != nil {
 			log.Fatalf("settings init failed: %v", err)

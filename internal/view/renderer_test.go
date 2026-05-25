@@ -41,7 +41,7 @@ func TestNewRendererRendersIndex(t *testing.T) {
 	if !strings.Contains(body, "<title>API Monitor (Go)</title>") {
 		t.Fatalf("rendered body missing title, got %q", body[:min(200, len(body))])
 	}
-	if !strings.Contains(body, `data-glass-enabled="true"`) {
+	if !strings.Contains(body, `data-glass-enabled="false"`) {
 		t.Fatalf("rendered body missing liquid glass attribute, got %q", body[:min(200, len(body))])
 	}
 }

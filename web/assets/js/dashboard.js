@@ -42,8 +42,13 @@ function dashboard() {
 
 
         connectSSE() {
+            if (this._eventSource) {
+                this._eventSource.close();
+                this._eventSource = null;
+            }
             try {
                 const es = Utils.createEventSource('/api/events');
+                this._eventSource = es;
                 es.addEventListener('run_completed', () => this.loadData());
                 es.addEventListener('target_updated', () => this.loadData());
                 es.addEventListener('auth_changed', () => {
@@ -56,6 +61,7 @@ function dashboard() {
                 });
                 es.onerror = () => {
                     es.close();
+                    this._eventSource = null;
                     // Exponential backoff reconnect (5s→10s→20s→40s→60s max)
                     const delay = this._sseReconnectDelay;
                     this._sseReconnectDelay = Math.min(delay * 2, this._sseMaxReconnectDelay);

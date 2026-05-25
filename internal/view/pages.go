@@ -92,7 +92,7 @@ var pageRegistry = map[string]pageSpec{
 			HeaderVariant:      headerVariantTopbar,
 			BodyClass:          "bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen bg-grid transition-colors duration-300",
 			BodyAttrs:          `x-data="dashboard()"`,
-			LiquidGlassEnabled: true,
+			LiquidGlassEnabled: false,
 		},
 	},
 	"analysis": {
@@ -103,7 +103,7 @@ var pageRegistry = map[string]pageSpec{
 			PageName:           "analysis",
 			HeaderVariant:      headerVariantTopbar,
 			BodyClass:          "bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen font-sans transition-colors duration-300 bg-grid pb-20",
-			LiquidGlassEnabled: true,
+			LiquidGlassEnabled: false,
 		},
 	},
 	"log_viewer": {
@@ -115,7 +115,7 @@ var pageRegistry = map[string]pageSpec{
 			HeaderVariant:      headerVariantTopbar,
 			BodyClass:          "bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 h-screen bg-grid transition-colors duration-300 overflow-hidden flex flex-col",
 			BodyAttrs:          `x-data="logViewer()"`,
-			LiquidGlassEnabled: true,
+			LiquidGlassEnabled: false,
 		},
 	},
 	"admin": {
@@ -127,7 +127,7 @@ var pageRegistry = map[string]pageSpec{
 			HeaderVariant:      headerVariantAdmin,
 			BodyClass:          "bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen bg-grid transition-colors duration-300",
 			BodyAttrs:          `data-page="admin-panel"`,
-			LiquidGlassEnabled: true,
+			LiquidGlassEnabled: false,
 		},
 	},
 	"admin_login": {
@@ -139,7 +139,7 @@ var pageRegistry = map[string]pageSpec{
 			HeaderVariant:      headerVariantPublic,
 			BodyClass:          "bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen bg-grid transition-colors duration-300",
 			BodyAttrs:          `data-page="admin-login"`,
-			LiquidGlassEnabled: true,
+			LiquidGlassEnabled: false,
 		},
 	},
 	"proxy_docs": {
@@ -151,7 +151,7 @@ var pageRegistry = map[string]pageSpec{
 			HeaderVariant:      headerVariantPublic,
 			BodyClass:          "bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen bg-grid transition-colors duration-300",
 			ShowFooter:         true,
-			LiquidGlassEnabled: true,
+			LiquidGlassEnabled: false,
 		},
 	},
 }
